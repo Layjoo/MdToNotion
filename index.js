@@ -6,14 +6,15 @@ const fs = require("fs");
 const { get } = require('http');
 
 const path = "./testMd.txt";
+const pageTitle = "ploy";
 
 (async () => {
     const getDataBase = await notion.databases.query({database_id: databaseId});
     var blockId = "";
 
-    //get page ID of specific name "ploy" in Database 
+    //Get specific page ID in Database 
     getDataBase.results.map((page)=>{
-        if(page.properties.Name.title[0].plain_text == "ploy"){
+        if(page.properties.Name.title[0].plain_text == "pageTitle"){
             console.log("ID of " + page.properties.Name.title[0].plain_text + " is " + page.id);
             blockId = page.id;
             const textArr = getData(path);
@@ -76,6 +77,7 @@ const parserMdToNotionObj = (mytext) => {
       return blockObj;
     }
 
+    //check if text matched markdow symbow
     if(regex[type].test(mytext)){
       console.log("Match regex: " + mytext.match(regex[type]))
       blockObj[0].type = type;
@@ -112,7 +114,7 @@ const upLoadPageContent = async(arrOfText, PageId) =>{
     console.log("Add Normal block Success\n");
     }
     else{
-      const lastChildIdToAppend = await findLastChilde(PageId);
+      const lastChildIdToAppend = await findLastChild(PageId);
       const appendChildBlock = await notion.blocks.children.append(chilidObject(lastChildIdToAppend, obj[0]));
       console.log("Add Chlid block Success\n");
     }
@@ -120,7 +122,7 @@ const upLoadPageContent = async(arrOfText, PageId) =>{
 }
 
 //recursive function to find last child
-const findLastChilde = async(parentPageId) => {
+const findLastChild = async(parentPageId) => {
   var pageId = parentPageId
   const getChildlist = await notion.blocks.children.list({
     block_id: pageId,
@@ -131,5 +133,5 @@ const findLastChilde = async(parentPageId) => {
     return getChildlist.results[getChildlist.results.length-1].id;
   }
 
-  return findLastChilde(getChildlist.results[getChildlist.results.length-1].id);
+  return findLastChild(getChildlist.results[getChildlist.results.length-1].id);
 }
