@@ -14,7 +14,7 @@ const pageTitle = "ploy";
 
     //Get specific page ID in Database 
     getDataBase.results.map((page)=>{
-        if(page.properties.Name.title[0].plain_text == "pageTitle"){
+        if(page.properties.Name.title[0].plain_text == pageTitle){
             console.log("ID of " + page.properties.Name.title[0].plain_text + " is " + page.id);
             blockId = page.id;
             const textArr = getData(path);
