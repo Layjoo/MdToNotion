@@ -1,9 +1,15 @@
 # Heading 1
 ## Heading 2
-- this is list
-	- this is 2 child list
-	- this is 2 child list
-		- this is 3 child list
+- list
+	- first child level list
+	- first child level list
+		- Second child level list
+		- Second child level list
+			- Third child level list
+		- Second child level list
+	- first child level list
 
+Normal text
+	first child level Normal text
 ---
 Normal text
