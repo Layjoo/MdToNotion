@@ -5,7 +5,7 @@ This is my fist JavaScirpt code that playing with Notion API.
 
 ## version 0.1
 ### availability
-- Can upload .txt file with markdown symbol to specific page in notion database, the text is going to display in the content section of page.
+- Can upload .md file to specific page in notion database, the text is going to display in the content section of page.
 - Neasted children is supported.
 
 ### restriction
