@@ -9,5 +9,5 @@ This is my fist JavaScirpt code that playing with Notion API.
 - Neasted children is supported.
 
 ### restriction
-- Upload with a slow speed (I am a beginer, so this issue is a big problem for me.)
+- Upload with a slow speed but faster than md2notion (I am a beginer, so this issue is a big problem for me.)
 - Can parser only heading_1, heading_2, paragraph, bulleted_list_item, Divider block. (There're going to be more in the future.)
