@@ -3,77 +3,30 @@ const { Client } = require("@notionhq/client");
 const notion = new Client({ auth: process.env.NOTION_KEY});
 const databaseId = process.env.NOTION_DATABASE_ID;
 const fs = require("fs");
-const { get } = require('http');
+const { performance } = require('perf_hooks');
+const {parserMdToNotionObj} = require("./parserMd")
 
 const path = "./testMd.txt";
 const pageTitle = "ploy";
+const path2 = "H:/ไดรฟ์ของฉัน/DriveSyncFiles/Obsidian vault/Source note/202110081400 Lumbar spinal stenosis.md"
 
-//get data from path and return to array of each line
-const getData = (path) => {
-    return fs.readFileSync(path,{encoding: 'utf8', flag:'r'}).toString().split("\r\n");
-}
+main();
 
-const parserMdToNotionObj = (mytext) => {
-  const regex = {
-    "heading_1" : /^#\s/,
-    "heading_2" : /^##\s/,
-    "bulleted_list_item" : /^-\s/,
-    "paragraph" : /^\r/
-  }
+async function main() {
+  var startTime = performance.now()
+  const getDataBase = await notion.databases.query({ database_id: databaseId });
+  var blockId = "";
 
-  var blockObj = [
-    {
-      object: 'block',
-      type: 'paragraph',
-      paragraph: {
-        text: [
-          {
-            type: 'text',
-            text: {
-              content: "",
-            },
-          },
-        ],
-      },
-    },
-    {
-      isChild: false,
-      level: 0
+  //Get specific page ID in Database 
+  getDataBase.results.map((page) => {
+    if (page.properties.Name.title[0].plain_text == pageTitle) {
+      console.log("ID of " + page.properties.Name.title[0].plain_text + " is " + page.id);
+      blockId = page.id;
     }
-  ]
-
-  for(type in regex){
-
-    //check level of child object
-    const tabRegex =/\t/g
-    if(tabRegex.test(mytext)){
-      const levelOfnestedChild = mytext.match(tabRegex).length;
-      mytext = mytext.replace(tabRegex, "");
-      blockObj[1].isChild = true;
-      blockObj[1].level = levelOfnestedChild;
-    }
-
-    //check if text have a ---  this gonnabe a divider 
-    const dividerRegex = /---/
-    if(dividerRegex.test(mytext)){
-      delete blockObj[0].paragraph;
-      blockObj[0].type = "divider";
-      blockObj[0]["divider"] = {}; //divider contain empty obj;
-      return blockObj;
-    }
-
-    //check if text matched markdow symbow
-    if(regex[type].test(mytext)){
-      blockObj[0].type = type;
-      blockObj[0].paragraph.text[0].text.content = mytext.replace(regex[type], "");
-      blockObj[0][type] = blockObj[0].paragraph; // change paragraph key to correct key in regex
-      delete blockObj[0].paragraph;
-      console.log("Content is : " + blockObj[0][type].text[0].text.content + "\n");
-      return blockObj;
-    }
-  }
-  blockObj[0].paragraph.text[0].text.content = mytext;
-  return blockObj;
+  });
+  const upload = await upLoadPageContent(path, blockId);
+  var endTime = performance.now()
+  console.log(`--- ${(endTime - startTime)/1000} seconds`)
 }
 
 //return block object for appending to page
@@ -85,35 +38,47 @@ const childObject = (blockId, listOfChild) =>{
   return blockObj;
 }
 
-//upload file to notion
-const upLoadPageContent = async(compressList, PageId) =>{
-  for(i in compressList){
-    if(compressList[i]["level"] == 0){
-    const appendNormalBlock = await notion.blocks.children.append(childObject(PageId, compressList[i]["notionObj"]));
+//find last child id in the specific level
+const findLastChild = async(parentPageId) => {
+  const getChildlist = await notion.blocks.children.list({
+    block_id: parentPageId,
+    page_size: 50,
+  });
+  return getChildlist.results[getChildlist.results.length-1].id;
+}
+
+const upLoadPageContent = async(path, pageId) =>{
+  //get data and turn to array of string for ecach line
+  const listOfstring = fs.readFileSync(path,{encoding: 'utf8', flag:'r'}).toString().split("\r\n");
+  //parser mark down and compress to block object
+  const compressObj = compressBlockObj(listOfstring);
+  var previousLevel = 0;
+  var arrOfEachLevelId = [];
+
+  //upload each block object in different level (the same leval text will upload at once, this make upload faster)
+  for(i in compressObj){
+    var Level = compressObj[i]["level"];
+    if(Level == 0){
+    const appendNormalBlock = await notion.blocks.children.append(childObject(pageId, compressObj[i]["notionObj"]));
+    arrOfEachLevelId = [pageId];
+    previousLevel = 0;
     console.log("Add Normal block Success\n");
     }
-    else{
-      const lastChildIdToAppend = await findLastChild(PageId, compressList[i].level);
-      const appendChildBlock = await notion.blocks.children.append(childObject(lastChildIdToAppend, compressList[i]["notionObj"]));
+    if(Level - previousLevel == 1){
+      const lastChildIdToAppend = await findLastChild(arrOfEachLevelId[Level-1]);
+      const appendChildBlock = await notion.blocks.children.append(childObject(lastChildIdToAppend, compressObj[i]["notionObj"]));
       console.log("Add Chlid block Success\n");
+      arrOfEachLevelId.push(lastChildIdToAppend);
+      previousLevel = Level;
     }
-  }
+    if(Level - previousLevel < 0 ){
+      const appendNormalBlock = await notion.blocks.children.append(childObject(arrOfEachLevelId[Level], compressObj[i]["notionObj"]));
+      console.log("Add Normal block Success\n");
+    }
+  } 
 }
 
-//find last child id in the specific level
-const findLastChild = async(parentPageId, level) => {
-  var pageId = parentPageId;
-  for(var i=0; i < level;i++){
-    const getChildlist = await notion.blocks.children.list({
-      block_id: pageId,
-      page_size: 50,
-    });
-    var pageId = getChildlist.results[getChildlist.results.length-1].id;
-  }
-  return pageId;
-}
-
-//return array of each list object with level
+//return array of the same level object (this will make upload faster)
 const compressBlockObj = (listOfText) =>{
   var compressObj = [];
   var currentLevel;
@@ -141,18 +106,3 @@ const compressBlockObj = (listOfText) =>{
   return compressObj;
 }
 
-(async () => {
-    const getDataBase = await notion.databases.query({database_id: databaseId});
-    var blockId = "";
-
-    //Get specific page ID in Database 
-    getDataBase.results.map((page)=>{
-        if(page.properties.Name.title[0].plain_text == pageTitle){
-            console.log("ID of " + page.properties.Name.title[0].plain_text + " is " + page.id);
-            blockId = page.id;
-            const textArr = getData(path);
-            const compressList = compressBlockObj(textArr);
-            upLoadPageContent(compressList, blockId);
-        }
-    })
-})();
