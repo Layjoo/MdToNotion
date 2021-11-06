@@ -8,13 +8,6 @@ This is my fist JavaScirpt code that playing with Notion API.
 - Can upload .md file to specific page in notion database, the text is going to display in the content section of page.
 - Neasted children is supported.
 
-
-### restriction
-- Upload with a slow speed but faster than md2notion (I am a beginer, so this issue is a big problem for me.)
-- Can parser only heading_1, heading_2, paragraph, bulleted_list_item, Divider block. (There're going to be more in the future.)
-
----
-
 ## version 0.2
 ### what's news?
 - Upload with faster speed
@@ -24,4 +17,12 @@ This is my fist JavaScirpt code that playing with Notion API.
     - Bold
 - Can upload all file in the folder to database as page (the page title is the same as file name.)
 - Can upload file with specific page via page's id.
+
+## version 0.3
+### what's news?
+- Upload with faster speed if your text is lesser than 4 level of tab.
+- Support more annotation
+    - strikethrough
+- Support backlink (modified to mention page in notion) if you already have backlink page in the database.
+
 
