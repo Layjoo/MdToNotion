@@ -6,14 +6,18 @@ const MdToNotion = require("./mdToNotion")
 const fs = require("fs")
 
 const folderPath = "./testFolder";
-const page = "9a84b3231bc44b3abb8e118d9cdf45f9"
+const page = "08899c6d1c2e4e75bd4d74fec74c548d"
 
 const mdt = new MdToNotion(notion);
 
-// fs.readdir(folderPath, (err, files) => {
-//   files.forEach(file => {
-//     mdt.uploadToDatabase(folderPath + "/" + file,databaseId)
-//   });
-// });
+const uploadFolder = async(folderPath) =>{
+    var files = fs.readdirSync(folderPath);
+    for(let i in files){
+        const upload = await mdt.uploadToDatabase(folderPath + "/" + files[i],databaseId);
+    }
+   
+}
 
-mdt.uploadToPage("./testMd.txt", page);
+uploadFolder(folderPath)
+
+// mdt.uploadToPage("./testMd2.txt", page);
