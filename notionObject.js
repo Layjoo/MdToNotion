@@ -21,6 +21,11 @@ class NotionObject {
       },
     }
 
+    updatePageObj = {
+      page_id: null,
+      properties: null,
+    }
+
     blockObj = {
       object: 'block',
       type: 'paragraph',
@@ -55,7 +60,16 @@ class NotionObject {
         type: 'mention',
         mention: { type: 'page', page: { id: '9777d88c02424e459548b2f7d4f3661b' } },
       }
+    
+    pageProperty = {
+        page_id: null,
+        properties: null
+    }
 
+    dataBaseProperty = {
+      database_id: null,
+      properties: null
+    }
 }
 
 class Block{
@@ -135,9 +149,16 @@ class Block{
     "type": "divider",
     "divider": {}
   }
+}
+
+class Property{
+  
+  rich_text =  {
+    rich_text: null, //array of rich_text object
+  }
 
 }
 
 module.exports = {
-  NotionObject, Block
+  NotionObject, Block , Property
 }
