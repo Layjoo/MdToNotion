@@ -62,6 +62,7 @@ module.exports = class MdToNotion{
       bold: /(?<!\|)\*\*[^(\|\*\s)].+?\*\*(?!\|)/,
       code: /(?<!\|)`[^(\|\`\s)].+?`(?!\|)/,
       strikethrough: /(?<!\|)~.[^\|\s]*?~~(?!\|)/,
+      italic : /(?<!\||\*)\*[^(\|\*\s)].+?\*(?!\||\*)/,
       backLink: /(?<!\|)\[\[[^(\|\]\])].+?(?<!\.\w\w\w)\]\](?!\|)/ //exclud png jpg and pdf
     }
 
@@ -78,7 +79,7 @@ module.exports = class MdToNotion{
     
     //split normal text and anotation in to array.
     const listOfText = text.split("|");
-    var modifiedText = [];
+    let modifiedText = [];
 
     for(let i=0; i<listOfText.length; i++){
       if(regex.bold.test(listOfText[i])){
@@ -115,6 +116,14 @@ module.exports = class MdToNotion{
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
       }
+      else if(regex.italic.test(listOfText[i])){
+        const content = listOfText[i].replace(/\*/g,"")
+        const richTextObj = new NotionObject().richTextObj;
+        richTextObj.plain_text = content;
+        richTextObj.annotations["italic"] = true;
+        richTextObj.text.content = content;
+        modifiedText.push(richTextObj);
+      }
       else if(regex.backLink.test(listOfText[i])){
         const content = listOfText[i].replace(/\[\[|\]\]/g,"")
         if(this.#databaseId !== null && this.#backlinkType !== null){
@@ -134,14 +143,13 @@ module.exports = class MdToNotion{
               modifiedText.push(mentionObj);
               console.log(`Mention to ${content} complete`)
             }
-          }else if(this.#backlinkType == "link"){ //user input, if not then use mention in above
+          }else if(this.#backlinkType == "link"){ //user input "link", if not then use mention in above
             const richTextObj = new NotionObject().richTextObj;
             richTextObj.plain_text = content;
             richTextObj.text.content = content;
             if(pageId.id != null){ //turn matched page into mention notion style
               richTextObj.text.link = {url: `/${pageId.id.replace(/-/g,"")}`}
               this.#backlinkList.push(pageId.id);
-              console.log(richTextObj.href)
               console.log(`Link to ${content} complete`)
             }else{ //if page not found create new one in current database instead
               const addNewPage = await this.createPage(content)
@@ -172,9 +180,9 @@ module.exports = class MdToNotion{
   //paser md to notion block.
   //every line in the page content is represented by notion block object.
   parserMdToNotionObj = async(text) => {
-    //notion block object style
-    var blockObj = [
-      //blockObj[0] is empty
+    //notion block object style with level of tab.
+    let blockObj = [
+      //blockObj[0] is empty now, we will add in next step.
     ,
       {
         isChild: false,
@@ -183,7 +191,7 @@ module.exports = class MdToNotion{
     ]
 
     //check level of child object
-    const tabRegex =/^\t+/g
+    const tabRegex =/^\t|(?<=\t)\t/g
     if(tabRegex.test(text)){
       const levelOfnestedChild = text.match(tabRegex).length;
       text = text.replace(tabRegex, "");
@@ -198,6 +206,7 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
+    //check type of block
     const heading_1 = /^#\s/;
     if(heading_1.test(text)){
       blockObj[0] = new Block().heading_1;
@@ -246,20 +255,61 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
+    const table = /\|.+\|/g
+    if(table.test(text)){
+      const splitColumn = text.split(/\r\n|(?<!\r)\n/g);
+      //extract content form |---|
+      const removeHyphen = splitColumn.filter(e => e.match(/\|.+\|/) && !e.match(/\|-.*-\|/g))
+      let tableContent = "";
+      //add Latex sytax -> textsf{someContent} and merge them together to tabelContent.
+      for(let i=0; i<removeHyphen.length; i++){
+        const modifiedContent = removeHyphen[i].match(/(?<=\|).*?(?=\|)/g)
+        let newText = "";
+        for(let j = 0; j <modifiedContent.length; j++){
+            let text = `\\textsf{${modifiedContent[j]}}`
+            if(i==0){
+              text = `\\textsf{\\textbf{${modifiedContent[j]}}}`;
+            }
+            if(j==modifiedContent.length-1){
+                text = text + " \\\\\\hline\n"
+            }else{
+                text = text + " & "
+            }
+            newText = newText + text;
+        }
+        tableContent = tableContent + newText;
+      } 
+
+      //count column of table form |---|
+      const column = splitColumn.filter(e => e.match(/\|-.*-\|/g))
+      const countColumn = column[0].match(/(?<=\|)-+(?=\|)/g).length;
+
+      let tableColumn = ""
+      for(let i=0; i<countColumn; i++){
+          tableColumn+= "|c"
+      }
+      //Merge header and tabel content together and add to notion Block object
+      const addTable = `\\def\\arraystretch{1.4}\\begin{array}{${tableColumn}|}\\hline\n${tableContent}\\end{array}`
+      blockObj[0] = new Block().equation;
+      blockObj[0].equation.expression = addTable;
+      return blockObj;
+    }
+
+    //if doesn't match anything then covert to paragraph block.
     blockObj[0] = new Block().paragraph;
-    blockObj[0].paragraph.text = await this.parserToRichTextObj(text); //normal text object
+    blockObj[0].paragraph.text = await this.parserToRichTextObj(text);
     return blockObj;
   }
 
   #sameLevelCompress = async(listOfText) =>{
-    var compressObj = [];
-    var currentLevel;   
-    var currentArr = [];
-    var notionObj
+    let compressObj = [];
+    let currentLevel;   
+    let currentArr = [];
+    let notionObj
   
     //check if input is multiple line -> make the same level line in the same array
     if(listOfText.length > 1){
-      for(var i=0; i < listOfText.length; i++){
+      for(let i=0; i < listOfText.length; i++){
         notionObj = await this.parserMdToNotionObj(listOfText[i]);
         if(i==0){//fist round
           currentLevel = notionObj[1].level;
@@ -289,8 +339,8 @@ module.exports = class MdToNotion{
   //this fuction loop througt every level to find the furthest level, then put itself into previous level as child.
   //the loop sitll going untill all of the level nested into level 0.
   #nestedChildCompress = (compressObj)=>{
-    var previous = 0;
-    var i = 0;
+    let previous = 0;
+    let i = 0;
 
     //if the file have only level 0 then compress them to one object.
     if(compressObj.length == 1){
@@ -309,7 +359,6 @@ module.exports = class MdToNotion{
           const type = compressObj[i-2].notionObj[postion]["type"];
           //if previous is the same level of its parent, put them together.
           if(compressObj[i-1].level !== compressObj[i-2].level){
-            console.log(compressObj[i-2].notionObj[postion]["type"])
             compressObj[i-2].notionObj[postion][type]["children"] = compressObj[i-1].notionObj;
             compressObj.splice(i-1,1);
           }else{
@@ -338,7 +387,7 @@ module.exports = class MdToNotion{
 
         //Check if compress finished or not
         //if sumamation of all level is more thea 0 the loop still going.
-        var sum = 0;
+        let sum = 0;
         for(let x in compressObj){
           sum = sum + compressObj[x]["level"]
         }
@@ -354,7 +403,7 @@ module.exports = class MdToNotion{
   }
 
   #findFurthestLevle = (compressObj)=>{
-    var furthest = 0;
+    let furthest = 0;
     for(let i=0; i < compressObj.length-1; i++){
       if(compressObj[i].level > furthest){
         furthest = compressObj[i].level
@@ -383,8 +432,8 @@ module.exports = class MdToNotion{
   
   uploadToPage = async(filePath, pageId) =>{
     //get text --> spilt text --> return to array of split string
-    const listOfstring = fs.readFileSync(filePath,{encoding: 'utf8', flag:'r'}).toString().split("\r\n");
-    const compressObj = await this.#sameLevelCompress(listOfstring);
+    const listOfString = fs.readFileSync(filePath,{encoding: 'utf8', flag:'r'}).toString().split(/(?<!\|)\r\n|\n(?!\|)/g); //new line and tabel were included
+    const compressObj = await this.#sameLevelCompress(listOfString);
     const furthestLevel = this.#findFurthestLevle(compressObj);
     let uploadResponse;
 
@@ -395,7 +444,7 @@ module.exports = class MdToNotion{
     
       //upload each block object in different level (the same leval will upload at once, this make upload faster)
       for(let i=0; i<compressObj.length; i++){
-        var Level = compressObj[i]["level"];
+        let Level = compressObj[i]["level"];
         if(Level == 0){
         uploadResponse = await this.#notion.blocks.children.append(this.#childObject(pageId, compressObj[i]["notionObj"]));
         arrOfEachLevelId = [pageId];
@@ -417,6 +466,12 @@ module.exports = class MdToNotion{
       //notion only support nested 2 level child upload, so if nested child more than 2 -> using above method to upload instead
       const nestedObj = this.#nestedChildCompress(compressObj);
       uploadResponse = await this.#notion.blocks.children.append(this.#childObject(pageId, nestedObj));
+    }
+    //Checking after upload each file 
+    //if there are link to another page in content, then update backlink property for every page that link to this.
+    if(this.#backlinkList.length!==0 && this.#databaseId != null){
+      const pageTitle = path.basename(filePath, path.extname(filePath));
+      const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
     }
     console.log("Upload page success\n");
   }
@@ -441,9 +496,9 @@ module.exports = class MdToNotion{
 
     //Checking after upload each file 
     //if there are link to another page in content, then update backlink property for every page that link to this.
-    if(this.#backlinkList.length!==0){
-      const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
-    }
+    // if(this.#backlinkList.length!==0){
+    //   const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
+    // }
   }
 
   createPage = async(pageName) => {
@@ -541,7 +596,7 @@ module.exports = class MdToNotion{
       });
     });
     }else{
-      var files = fs.readdirSync(folderPath);
+      let files = fs.readdirSync(folderPath);
       for(let i in files){
           const upload = await this.uploadToDatabase(folderPath + "/" + files[i],this.#databaseId);
       }

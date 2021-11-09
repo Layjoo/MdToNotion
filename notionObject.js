@@ -74,80 +74,87 @@ class NotionObject {
 
 class Block{
   paragraph = {
-      "type": "paragraph",
-      "paragraph": {
-        "text": [],
-        // "children":[]
-      }
+    "type": "paragraph",
+    "paragraph": {
+      "text": [],
+      // "children":[]
+    }
   }
 
   heading_1 = {
-      "type": "heading_1",
-      "heading_1": {
-        "text": []
-      }
+    "type": "heading_1",
+    "heading_1": {
+      "text": []
+    }
   }
 
   heading_2 = {
-      "type": "heading_2",
-      "heading_2": {
-        "text": []
-      }
+    "type": "heading_2",
+    "heading_2": {
+      "text": []
+    }
   }
 
   heading_3 = {
-      "type": "heading_3",
-      "heading_3": {
-        "text": []
-      }
+    "type": "heading_3",
+    "heading_3": {
+      "text": []
+    }
   }
 
   bulleted_list_item = {
-      "type": "bulleted_list_item",
-      "bulleted_list_item": {
-        "text": [{
-          "type": "text",
-          "text": {
-            "content": "Lacinato kale",
-            "link": null
-          }
-        }],
-        // "children":[]
-      }
+    "type": "bulleted_list_item",
+    "bulleted_list_item": {
+      "text": [{
+        "type": "text",
+        "text": {
+          "content": "Lacinato kale",
+          "link": null
+        }
+      }],
+      // "children":[]
+    }
   }
 
   numbered_list_item = {
-      "type": "numbered_list_item",
-      "numbered_list_item": {
-        "text": [{
-          "type": "text",
-          "text": {
-            "content": "Lacinato kale",
-            "link": null
-          }
-        }],
-        // "children":[]
-      }
+    "type": "numbered_list_item",
+    "numbered_list_item": {
+      "text": [{
+        "type": "text",
+        "text": {
+          "content": "Lacinato kale",
+          "link": null
+        }
+      }],
+      // "children":[]
+    }
   }
 
   callout = {
-      "type": "callout",
-      "callout": {
-      "text": null,
-      }
+    "type": "callout",
+    "callout": {
+    "text": null,
+    }
   }
 
   quote = {
-      "object": 'block',
-      "type": "quote",
-      "quote": {
-          "text": null,
-      }
+    "object": 'block',
+    "type": "quote",
+    "quote": {
+        "text": null,
+    }
   }
 
   divider = {
     "type": "divider",
     "divider": {}
+  }
+
+  equation = {
+    "type": 'equation',
+    "equation": {
+        "expression": null,
+    },
   }
 }
 
