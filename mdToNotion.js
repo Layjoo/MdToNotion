@@ -69,6 +69,7 @@ module.exports = class MdToNotion{
     //checking the annotation of content, seperate them with |.
     for(let i in regex){
       while(text.match(regex[i])!==null){
+        console.log(text.match(regex[i]))
         const index = text.match(regex[i]).index
         const lastSlice = index + text.match(regex[i])[0].length
         const textInside = text.slice(index,lastSlice)
@@ -255,11 +256,11 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const table = /\|.+\|/g
+    const table = /(?<=\|)\s*-+\s*(?=\|)/g
     if(table.test(text)){
       const splitColumn = text.split(/\r\n|(?<!\r)\n/g);
-      //extract content form |---|
-      const removeHyphen = splitColumn.filter(e => e.match(/\|.+\|/) && !e.match(/\|-.*-\|/g))
+      //remove |---|
+      const removeHyphen = splitColumn.filter(e => e.match(/\|.+\|/) && !e.match(/(?<=\|)\s*-+\s*(?=\|)/g))
       let tableContent = "";
       //add Latex sytax -> textsf{someContent} and merge them together to tabelContent.
       for(let i=0; i<removeHyphen.length; i++){
@@ -281,8 +282,8 @@ module.exports = class MdToNotion{
       } 
 
       //count column of table form |---|
-      const column = splitColumn.filter(e => e.match(/\|-.*-\|/g))
-      const countColumn = column[0].match(/(?<=\|)-+(?=\|)/g).length;
+      const column = splitColumn.filter(e => e.match(/\|\s*[-\|\s]+\s*\|/g))
+      const countColumn = column[0].match(/(?<=\|)\s*-+\s*(?=\|)/g).length;
 
       let tableColumn = ""
       for(let i=0; i<countColumn; i++){
@@ -493,12 +494,6 @@ module.exports = class MdToNotion{
       console.log("You already have this page, upload to this page instead...")
       await this.uploadToPage(filePath, pageId);
     }
-
-    //Checking after upload each file 
-    //if there are link to another page in content, then update backlink property for every page that link to this.
-    // if(this.#backlinkList.length!==0){
-    //   const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
-    // }
   }
 
   createPage = async(pageName) => {
