@@ -296,6 +296,26 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
+    const code = /^\!\`\`\`/;
+    if(code.test(text)){
+      const notionCode = new NotionObject().NotionCodeLanguage;
+      const content = text.replace(/\!\`\`\`.*\n|\n\`\`\`\n*/g, "")
+      blockObj[0] = new Block().codeBlock;
+      blockObj[0].code.text[0].text.content = content;
+      const codeLanguage = text.match(/(?<=\!\`\`\`).*(?=\n)/);
+      if(codeLanguage.length !== null){
+        const matchedLanguage = notionCode.filter(e => e == codeLanguage[0]);
+        console.log(matchedLanguage)
+        if(matchedLanguage.length !== 0){
+          blockObj[0].code.language = matchedLanguage[0];
+        }
+        else{
+          blockObj[0].code.language = "plain text"
+        }
+      }
+      return blockObj;
+    }
+
     //if doesn't match anything then covert to paragraph block.
     blockObj[0] = new Block().paragraph;
     blockObj[0].paragraph.text = await this.parserToRichTextObj(text);
@@ -430,10 +450,38 @@ module.exports = class MdToNotion{
     });
     return getChildlist.results[getChildlist.results.length-1].id;
   }
+
+  #modifiedCodeBlock = (listOfString) =>{
+    let indexOfCode = [];
+    let i=0;
+    for(i; i<listOfString.length; i++){
+      const codeRegex = /^\`\`\`/;
+      if(codeRegex.test(listOfString[i])){
+        indexOfCode.push(i)
+      }
+
+      if(indexOfCode.length == 2){
+        const fistIndex = indexOfCode[0];
+        const lastIndex = indexOfCode[1];
+        const codeSplit = listOfString.splice(fistIndex,lastIndex-fistIndex+1);
+
+        let mergeSplit = codeSplit.reduce((pre,now) => pre + "\n" + now)
+        mergeSplit = "!" + mergeSplit
+        listOfString.splice(fistIndex,0,mergeSplit);
+
+        i = 0;
+        indexOfCode = [];
+      }
+    }
+    return listOfString;
+  }
   
   uploadToPage = async(filePath, pageId) =>{
     //get text --> spilt text --> return to array of split string
-    const listOfString = fs.readFileSync(filePath,{encoding: 'utf8', flag:'r'}).toString().split(/(?<!\|)\r\n|\n(?!\|)/g); //new line and tabel were included
+    let listOfString = fs.readFileSync(filePath,{encoding: 'utf8', flag:'r'})
+      .toString()
+      .split(/(?<!\|)\r\n|\n(?!\|)/g); //new line and tabel were included
+    listOfString = this.#modifiedCodeBlock(listOfString);
     const compressObj = await this.#sameLevelCompress(listOfString);
     const furthestLevel = this.#findFurthestLevle(compressObj);
     let uploadResponse;

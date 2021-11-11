@@ -12,5 +12,4 @@ const mdt = new MdToNotion(notion);
 mdt.dataBaseSetId(database);
 mdt.pageSetIcon("⚡");
 mdt.uploadToPage(file, page)
-mdt.uploadFolder(folder)
-
+// mdt.uploadFolder(folder)
