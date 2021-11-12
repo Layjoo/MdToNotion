@@ -1,77 +1,98 @@
 class NotionObject {
-    pageObj = {
-      parent: {
-        database_id: null,
-      },
-      icon: {
-          type: "emoji",
-          emoji: "🔗"
-      },
-      cover: null,
-      properties: {
-          Name: {
-              title: [
-                  {
-                      text: {
-                      content: "",
-                      },
-                  },
-              ],
-          },
-      },
-    }
-
-    updatePageObj = {
-      page_id: null,
-      properties: null,
-    }
-
-    blockObj = {
-      object: 'block',
-      type: 'paragraph',
-      paragraph: {
-      text: [
-              {
-                  type: 'text',
-                  text: {
-                      content: "",
-                  },
-              },
-          ],
-      },
-    }
-
-    richTextObj = {
-        type: 'text',
-        text: { content: 'annnotation', link: null },
-        annotations: {
-            italic: false,
-            strikethrough: false,
-            underline: false,
-            color: 'default',
-            code: false,
-            bold: false,
-        },
-        plain_text: 'annnotation',
-        href: null
-    }
-
-    mentionObj = {
-        type: 'mention',
-        mention: { type: 'page', page: { id: '9777d88c02424e459548b2f7d4f3661b' } },
-      }
-    
-    pageProperty = {
-        page_id: null,
-        properties: null
-    }
-
-    dataBaseProperty = {
+  pageObj = {
+    parent: {
       database_id: null,
-      properties: null
-    }
+    },
+    icon: {
+      type: "emoji",
+      emoji: "🔗"
+    },
+    cover: null,
+    properties: {
+      Name: {
+        title: [{
+          text: {
+            content: "",
+          },
+        }, ],
+      },
+    },
+  }
 
-    NotionCodeLanguage = ["abap", "arduino", "bash", "basic", "c", "clojure", 
+  updatePageObj = {
+    page_id: null,
+    properties: null,
+  }
+
+  blockObj = {
+    object: 'block',
+    type: 'paragraph',
+    paragraph: {
+      text: [{
+        type: 'text',
+        text: {
+          content: "",
+        },
+      }, ],
+    },
+  }
+
+  richTextObj = {
+    type: 'text',
+    text: {
+      content: 'annnotation',
+      link: null
+    },
+    annotations: {
+      italic: false,
+      strikethrough: false,
+      underline: false,
+      color: 'default',
+      code: false,
+      bold: false,
+    },
+    plain_text: 'annnotation',
+    href: null
+  }
+
+  equationObj = {
+    type: 'equation',
+    equation: {
+      expression: null
+    },
+    annotations: {
+      bold: false,
+      italic: false,
+      strikethrough: false,
+      underline: false,
+      code: false,
+      color: 'default'
+    },
+    plain_text: null,
+    href: null
+  }
+
+  mentionObj = {
+    type: 'mention',
+    mention: {
+      type: 'page',
+      page: {
+        id: '9777d88c02424e459548b2f7d4f3661b'
+      }
+    },
+  }
+
+  pageProperty = {
+    page_id: null,
+    properties: null
+  }
+
+  dataBaseProperty = {
+    database_id: null,
+    properties: null
+  }
+
+  NotionCodeLanguage = ["abap", "arduino", "bash", "basic", "c", "clojure",
     "coffeescript", "c++", "c#", "css", "dart", "diff", "docker", "elixir", "elm",
     "erlang", "flow", "fortran", "f#", "gherkin", "glsl", "go", "graphql", "groovy",
     "haskell", "html", "java", "javascript", "json", "julia", "kotlin", "latex",
@@ -79,10 +100,11 @@ class NotionObject {
     "mermaid", "nix", "objective-c", "ocaml", "pascal", "perl", "php", "plain text",
     "powershell", "prolog", "protobuf", "python", "r", "reason", "ruby", "rust", "sass",
     "scala", "scheme", "scss", "shell", "sql", "swift", "typescript", "vb.net", "verilog",
-    "vhdl", "visual basic", "webassembly", "xml", "yaml", "java/c/c++/c#"]
+    "vhdl", "visual basic", "webassembly", "xml", "yaml", "java/c/c++/c#"
+  ]
 }
 
-class Block{
+class Block {
   paragraph = {
     "type": "paragraph",
     "paragraph": {
@@ -143,7 +165,7 @@ class Block{
   callout = {
     "type": "callout",
     "callout": {
-    "text": null,
+      "text": null,
     }
   }
 
@@ -151,7 +173,7 @@ class Block{
     "object": 'block',
     "type": "quote",
     "quote": {
-        "text": null,
+      "text": null,
     }
   }
 
@@ -163,9 +185,19 @@ class Block{
   equation = {
     "type": 'equation',
     "equation": {
-        "expression": null,
+      "expression": null,
     },
   }
+
+  todo = {
+    type: "to_do",
+    to_do: {
+      text: null,
+      checked: null,
+    }
+    // "children":[]
+  }
+
 
   codeBlock = {
     type: "code",
@@ -181,14 +213,16 @@ class Block{
   }
 }
 
-class Property{
-  
-  rich_text =  {
+class Property {
+
+  rich_text = {
     rich_text: null, //array of rich_text object
   }
 
 }
 
 module.exports = {
-  NotionObject, Block , Property
+  NotionObject,
+  Block,
+  Property
 }

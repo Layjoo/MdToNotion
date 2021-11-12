@@ -6,10 +6,10 @@ const notion = new Client({ auth: process.env.NOTION_KEY});
 const MdToNotion = require("./mdToNotion.js")
 const fs = require("fs");
 
-
 const mdt = new MdToNotion(notion);
 
 mdt.dataBaseSetId(database);
 mdt.pageSetIcon("⚡");
+// mdt.setBacklink("mention")
 mdt.uploadToPage(file, page)
 // mdt.uploadFolder(folder)
