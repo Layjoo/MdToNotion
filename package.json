@@ -1,0 +1,7 @@
+{
+  "dependencies": {
+    "@notionhq/client": "^0.4.6",
+    "dotenv": "^10.0.0",
+    "imgur": "^1.0.2"
+  }
+}

@@ -198,6 +198,16 @@ class Block {
     // "children":[]
   }
 
+  image = {
+    type: "image",
+    image: {
+      type: "external",
+      external: {
+          url: null
+      }
+    }
+  }
+
 
   codeBlock = {
     type: "code",
