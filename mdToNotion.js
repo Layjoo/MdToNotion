@@ -71,7 +71,7 @@ module.exports = class MdToNotion{
   //this make annotaion and mention happend.
   #parserToRichTextObj = async (text) => {
     const regex = {
-      highlight: /(?<!┆)==[^┆\=\s].+?==(?!┆)/,
+      highlight: /(?<!┆)==[^┆\=\s].*?==(?!┆)/,
       bold: /(?<!┆)\*\*[^(┆\*\s)].+?\*\*(?!┆)/,
       code: /(?<!┆)`[^(┆\`\s)].+?`(?!┆)/,
       strikethrough: /(?<!┆)~.[^┆\s]*?~~(?!┆)/,
@@ -378,14 +378,17 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const image = /\!*\[\[.*?\.\w\w\w\]\]/;
+    const image = /\!*\[\[.*?\.png|jpg|gif\]\]/;
     if (image.test(text)) {
       const imgFileName = text.match(/(?<=\[\[).*?(?=\]\])/)[0];
       const imgPath = this.#searchImg(this.#imgPath, imgFileName)
       if(imgPath !== null){
         blockObj[0] = new Block().image;
-        blockObj[0].image.external.url = await this.#uploadImg(imgPath);
-        return blockObj;
+        const imageUrl = await this.#uploadImg(imgPath);
+        if(imageUrl !== null){
+          blockObj[0].image.external.url = imageUrl;
+          return blockObj;
+        }
       }
     }
 
@@ -464,7 +467,7 @@ module.exports = class MdToNotion{
 
           //check target block can have child or can not, before append as child
           const noChild = ["equation", "heading_1", "heading_2",
-          "heading_3", "callout", "quote", "divider", "image", "codeBlock"];
+          "heading_3", "callout", "quote", "divider", "image", "code"];
           const isNoChild = noChild.filter(e =>  e == type);
           
           //if previos is the furthest level and it can have child, put it in previous level of it (parent of previous).
@@ -541,7 +544,7 @@ module.exports = class MdToNotion{
   }
 
   //set new aligment of inline code block
-  #modifiedCodeBlock = (listOfString) => {
+  #modifiedInlineCodeBlock = (listOfString) => {
     let indexOfCode = [];
     let i = 0;
     for (i; i < listOfString.length; i++) {
@@ -566,16 +569,45 @@ module.exports = class MdToNotion{
     return listOfString;
   }
 
+  //set new aligment of inline img
+  #modifiedInlineImg = (listOfString) =>{
+    const regex = {
+      image: /!*(?<!┆!{1})\[\[.*?\.png\]]|gif\]]|jpg\]\](?!┆)/,
+    }
+
+    for(let j = 0; j<listOfString.length;j++){
+      for (let i in regex) {
+        console.log("List = " + listOfString[j])
+        while (listOfString[j].match(regex[i]) !== null) {
+          const index = listOfString[j].match(regex[i]).index
+          const lastSlice = index + listOfString[j].match(regex[i])[0].length
+          const textInside = listOfString[j].slice(index, lastSlice)
+          const newReplce = listOfString[j].replace(regex[i], "┆" + textInside + "┆")
+          listOfString[j] = newReplce
+        }
+        if(/┆/.test(listOfString[j])){
+          const seperated = listOfString[j].split(/┆\s|\s┆|┆/);
+          listOfString.splice(j,1)
+          console.log(seperated)
+          console.log(...seperated)
+          listOfString.splice(j,0,...seperated);
+          j+=seperated.length;
+        }
+      }
+    }
+    return listOfString;
+  }
+
   #getText = (filePath) =>{
     let listOfString = fs.readFileSync(filePath, {
       encoding: 'utf8',
       flag: 'r'
     })
     .toString()
-    //new line, tabel, equation, image were included
-    // .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s|(?=\[\[.*?\.\w\w\w\]\])|\!(?=\[\[.*?\.\w\w\w\]\])|(?<=\.\w\w\w\]\])/g);
-    .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s|(?<!-\s\!{1})(?=\[\[.*?\.\w\w\w\]\])|(?<!-\s)\!(?=\[\[.*?\.\w\w\w\]\])|(?<=\.\w\w\w\]\])/g);
-    listOfString = this.#modifiedCodeBlock(listOfString); //set new aligment of inline code block
+    //new line, tabel, equation were included
+    .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s/g);
+    listOfString = this.#modifiedInlineCodeBlock(listOfString); //set new aligment of inline code block
+    listOfString = this.#modifiedInlineImg(listOfString); //set new aligment of inline img
     listOfString = listOfString.filter(e => e !== "" && !/^\n|^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
     return listOfString;
   }
@@ -760,18 +792,36 @@ module.exports = class MdToNotion{
     } else {
       let files = fs.readdirSync(folderPath);
       for (let i in files) {
-        const upload = await this.uploadToDatabase(folderPath + "/" + files[i], this.#databaseId);
+        if (fs.lstatSync(path.resolve(folderPath, files[i])).isFile()){
+          const upload = await this.uploadToDatabase(folderPath + "/" + files[i], this.#databaseId);
+        }
       }
     }
   }
 
   //upload image via imgur api and get url for uploaded image
   #uploadImg = async(filePath) => {
-    if(this.#imgurClientId !== null){
-      imgur.setCredentials(this.#imgurEmail, this.#imgurPassword, this.#imgurClientId);
-    }
-    const uploadImg = await imgur.uploadFile(filePath)
-    return uploadImg.link;
+   const stats =  fs.statSync(filePath);
+   if(stats.size/(1024*1024) < 1){
+     try{
+       if(this.#imgurClientId !== null){
+         imgur.setCredentials(this.#imgurEmail, this.#imgurPassword, this.#imgurClientId);
+       }
+       const uploadImg = await imgur.uploadFile(filePath)
+       return uploadImg.link;
+     }
+     catch(error){
+       if(error.message.match(/(?<=Response\scode\s)\w\w\w/)[0] == "417"){
+         console.log("❗Can not upload large file.")
+       }else if(error.message.match(/(?<=Response\scode\s)\w\w\w/)[0] == "429"){
+         console.log("❗Too many upload image. wait for minute and try again")
+       }
+       return null;
+     }
+   }else{
+     console.log("❗Cannote upload large image");
+     return null;
+   }
   }
 
   #searchImg = (imgFolderPath, imgFileName) => {
