@@ -1,8 +1,8 @@
 const path = require("path")
 const {NotionObject, Block, Property} = require("./notionObject");
 const fs = require("fs");
+const imgur = require("imgur");
 const { makeConsoleLogger } = require("@notionhq/client/build/src/logging");
-const { getPage } = require("@notionhq/client/build/src/api-endpoints");
 
 module.exports = class MdToNotion{
   #notion
@@ -10,6 +10,10 @@ module.exports = class MdToNotion{
   #pageIcon;
   #backlinkType;
   #backlinkList;
+  #imgurEmail;
+  #imgurPassword;
+  #imgurClientId;
+  #imgPath;
   
   constructor(notionToken) {
     this.#notion = notionToken;
@@ -17,6 +21,10 @@ module.exports = class MdToNotion{
     this.#databaseId = null;
     this.#backlinkType = null;
     this.#backlinkList = [];
+    this.#imgurEmail = null;
+    this.#imgurPassword = null;
+    this.#imgurClientId = null;
+    this.#imgPath = ".";
   }
 
   //findPage indatabase with specific title, return title and id. 
@@ -75,7 +83,6 @@ module.exports = class MdToNotion{
     //checking the annotation of content, seperate them with ┆.
     for (let i in regex) {
       while (text.match(regex[i]) !== null) {
-        console.log(text.match(regex[i]))
         const index = text.match(regex[i]).index
         const lastSlice = index + text.match(regex[i])[0].length
         const textInside = text.slice(index, lastSlice)
@@ -96,6 +103,7 @@ module.exports = class MdToNotion{
         richTextObj.annotations["bold"] = true;
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
+
       } else if (regex.code.test(listOfText[i])) {
         const content = listOfText[i].replace(/`/g, "")
         const richTextObj = new NotionObject().richTextObj;
@@ -104,6 +112,7 @@ module.exports = class MdToNotion{
         richTextObj.annotations["color"] = "red";
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
+
       } else if (regex.highlight.test(listOfText[i])) {
         const content = listOfText[i].replace(/==/g, "")
         const richTextObj = new NotionObject().richTextObj;
@@ -112,6 +121,7 @@ module.exports = class MdToNotion{
         richTextObj.annotations["color"] = "red";
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
+
       } else if (regex.strikethrough.test(listOfText[i])) {
         const content = listOfText[i].replace(/~~/g, "")
         const richTextObj = new NotionObject().richTextObj;
@@ -119,6 +129,7 @@ module.exports = class MdToNotion{
         richTextObj.annotations["strikethrough"] = true;
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
+
       } else if (regex.italic.test(listOfText[i])) {
         const content = listOfText[i].replace(/\*/g, "")
         const richTextObj = new NotionObject().richTextObj;
@@ -126,6 +137,7 @@ module.exports = class MdToNotion{
         richTextObj.annotations["italic"] = true;
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
+
       } else if (regex.backLink.test(listOfText[i])) {
         let content = listOfText[i].replace(/\[\[|\]\]/g, "")
         let link = content;
@@ -210,7 +222,6 @@ module.exports = class MdToNotion{
         level: 0
       }
     ]
-
     //check level of child object
     const tabRegex = /^\t|(?<=\t)\t/g
     if (tabRegex.test(text)) {
@@ -267,7 +278,6 @@ module.exports = class MdToNotion{
     if (todo.test(text)) {
       blockObj[0] = new Block().todo;
       const content = text.replace(todo, "");
-      console.log(content)
       blockObj[0].to_do.text = await this.#parserToRichTextObj(content);
       const isChecked = text.match(/(?<=-\s\[).(?=\])/)[0];
       if (isChecked == "x") {
@@ -278,7 +288,7 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const bulleted_list_item = /^-\s/;
+    const bulleted_list_item = /^-\s(?!\!*\[\[.*\.\w\w\w\]\])/; //exclud image in list
     if (bulleted_list_item.test(text)) {
       blockObj[0] = new Block().bulleted_list_item;
       const content = text.replace(bulleted_list_item, "");
@@ -286,7 +296,7 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const numbered_list_item = /^\d\.\s/;
+    const numbered_list_item = /^\d\.\s(?!\!*\[\[.*\.\w\w\w\]\])/; //exclude image in nubered list
     if (numbered_list_item.test(text)) {
       blockObj[0] = new Block().numbered_list_item;
       const content = text.replace(numbered_list_item, "");
@@ -351,7 +361,6 @@ module.exports = class MdToNotion{
       const codeLanguage = text.match(/(?<=\!\`\`\`).*(?=\n)/);
       if (codeLanguage.length !== null) {
         const matchedLanguage = notionCode.filter(e => e == codeLanguage[0]);
-        console.log(matchedLanguage)
         if (matchedLanguage.length !== 0) {
           blockObj[0].code.language = matchedLanguage[0];
         } else {
@@ -367,6 +376,17 @@ module.exports = class MdToNotion{
       blockObj[0] = new Block().equation;
       blockObj[0].equation.expression = content;
       return blockObj;
+    }
+
+    const image = /\!*\[\[.*?\.\w\w\w\]\]/;
+    if (image.test(text)) {
+      const imgFileName = text.match(/(?<=\[\[).*?(?=\]\])/)[0];
+      const imgPath = this.#searchImg(this.#imgPath, imgFileName)
+      if(imgPath !== null){
+        blockObj[0] = new Block().image;
+        blockObj[0].image.external.url = await this.#uploadImg(imgPath);
+        return blockObj;
+      }
     }
 
     //if doesn't match anything then covert to paragraph block.
@@ -432,19 +452,26 @@ module.exports = class MdToNotion{
         finishedCompress.push(...compressObj[y].notionObj)
       }
       return finishedCompress;
+
     } else {
       //loop througth every level and repeat untill all of the level nested into level 0.
       for (let i = 0; i < compressObj.length;) {
+
         //compare current with previos level.
-        //if previos is the furthest level, put it in previous level of it (parent of previous).
         if (compressObj[i].level - previous < 0) {
           const postion = compressObj[i - 2].notionObj.length - 1;
           const type = compressObj[i - 2].notionObj[postion]["type"];
-          //if previous is the same level of its parent, put them together.
-          if (compressObj[i - 1].level !== compressObj[i - 2].level) {
+
+          //check target block can have child or can not, before append as child
+          const noChild = ["equation", "heading_1", "heading_2",
+          "heading_3", "callout", "quote", "divider", "image", "codeBlock"];
+          const isNoChild = noChild.filter(e =>  e == type);
+          
+          //if previos is the furthest level and it can have child, put it in previous level of it (parent of previous).
+          if (compressObj[i - 1].level !== compressObj[i - 2].level && isNoChild.length == 0) {
             compressObj[i - 2].notionObj[postion][type]["children"] = compressObj[i - 1].notionObj;
             compressObj.splice(i - 1, 1);
-          } else {
+          } else { //if previous is the same level of its parent or the parent can't have child, put them together.
             compressObj[i - 2].notionObj.push(...compressObj[i - 1].notionObj)
             compressObj.splice(i - 1, 1);
           }
@@ -513,6 +540,7 @@ module.exports = class MdToNotion{
     return getChildlist.results[getChildlist.results.length - 1].id;
   }
 
+  //set new aligment of inline code block
   #modifiedCodeBlock = (listOfString) => {
     let indexOfCode = [];
     let i = 0;
@@ -538,15 +566,27 @@ module.exports = class MdToNotion{
     return listOfString;
   }
 
+  #getText = (filePath) =>{
+    let listOfString = fs.readFileSync(filePath, {
+      encoding: 'utf8',
+      flag: 'r'
+    })
+    .toString()
+    //new line, tabel, equation, image were included
+    // .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s|(?=\[\[.*?\.\w\w\w\]\])|\!(?=\[\[.*?\.\w\w\w\]\])|(?<=\.\w\w\w\]\])/g);
+    .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s|(?<!-\s\!{1})(?=\[\[.*?\.\w\w\w\]\])|(?<!-\s)\!(?=\[\[.*?\.\w\w\w\]\])|(?<=\.\w\w\w\]\])/g);
+    listOfString = this.#modifiedCodeBlock(listOfString); //set new aligment of inline code block
+    listOfString = listOfString.filter(e => e !== "" && !/^\n|^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
+    return listOfString;
+  }
+
   uploadToPage = async (filePath, pageId) => {
     //get text --> spilt text --> return to array of split string
-    let listOfString = fs.readFileSync(filePath, {
-        encoding: 'utf8',
-        flag: 'r'
-      })
-      .toString()
-      .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s/g); //new line, tabel, equation were included
-    listOfString = this.#modifiedCodeBlock(listOfString);
+    const listOfString = this.#getText(filePath)
+    if(listOfString.length == 0){
+      return console.log("Content is empty")
+    }
+    console.log("current file is " + filePath)
     const compressObj = await this.#sameLevelCompress(listOfString);
     const furthestLevel = this.#findFurthestLevle(compressObj);
     let uploadResponse;
@@ -587,7 +627,7 @@ module.exports = class MdToNotion{
       const pageTitle = path.basename(filePath, path.extname(filePath));
       const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
     }
-    console.log("Upload page success\n");
+    return console.log("Upload page success\n");
   }
 
   uploadToDatabase = async (filePath) => {
@@ -625,17 +665,22 @@ module.exports = class MdToNotion{
 
   pageSetIcon = (icon) => {
     this.#pageIcon = icon
-    console.log(`Set icon to ${this.#pageIcon}`)
+    console.log(`🔑 Set page icon with ${this.#pageIcon}`)
   }
 
   setBacklink = (typeOfBacklink) => {
     this.#backlinkType = typeOfBacklink;
-    console.log("Chage type of backing to " + this.#backlinkType)
+    console.log("🔑 Set type of backing with " + this.#backlinkType)
   }
 
   dataBaseSetId = (id) => {
     this.#databaseId = id;
-    console.log(`Set database with ${this.#databaseId}`)
+    console.log(`🔑 Set database id with ${this.#databaseId}`)
+  }
+
+  setImgPath = (imagePath) => {
+    this.#imgPath = imagePath;
+    console.log(`🔑 Set image path with ${this.#imgPath}`)
   }
 
   #createDatabaseProperty = async (propertyTitle, propertyType) => {
@@ -707,7 +752,9 @@ module.exports = class MdToNotion{
     if (this.#backlinkType == null) {
       fs.readdir(folderPath, (err, files) => {
         files.forEach(file => {
+          if (fs.lstatSync(path.resolve(folderPath, file)).isFile()){
           this.uploadToDatabase(folderPath + "/" + file, this.#databaseId)
+          }
         });
       });
     } else {
@@ -717,4 +764,36 @@ module.exports = class MdToNotion{
       }
     }
   }
+
+  //upload image via imgur api and get url for uploaded image
+  #uploadImg = async(filePath) => {
+    if(this.#imgurClientId !== null){
+      imgur.setCredentials(this.#imgurEmail, this.#imgurPassword, this.#imgurClientId);
+    }
+    const uploadImg = await imgur.uploadFile(filePath)
+    return uploadImg.link;
   }
+
+  #searchImg = (imgFolderPath, imgFileName) => {
+    const path = imgFolderPath;
+    const myfile = imgFileName
+    let imgPath = "";
+
+    let files = fs.readdirSync(path);
+    for (let i in files) {
+      if(files[i] == myfile){
+        console.log(`Found image : ${myfile}`);
+        imgPath = path + "/" + files[i]
+        return imgPath;
+      }
+    }
+    console.log(`Not found image : ${myfile}`)
+    return null;
+  }
+
+  loginImgur = (email, password, clientId) =>{
+    this.#imgurEmail = email;
+    this.#imgurPassword = password;
+    this.#imgurClientId = clientId
+  }
+}
