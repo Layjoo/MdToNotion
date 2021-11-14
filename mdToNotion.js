@@ -80,6 +80,8 @@ module.exports = class MdToNotion{
       equation: /(?<!┆)\$[^(┆\`\s)].+?\$(?!┆)/
     }
 
+    const isNotMention = /\.pdf|\.gif|\.png\.jpg/;
+
     //checking the annotation of content, seperate them with ┆.
     for (let i in regex) {
       while (text.match(regex[i]) !== null) {
@@ -138,9 +140,15 @@ module.exports = class MdToNotion{
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
 
-      } else if (regex.backLink.test(listOfText[i])) {
+      } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText)) {
         let content = listOfText[i].replace(/\[\[|\]\]/g, "")
         let link = content;
+
+        //check if mention have block reference or not, if true, mention to page of that block
+        const isBlockReference = /#\^\w*/;
+        if(isBlockReference.test(listOfText[i])){
+          link = content.match(/.*(?=#\^)/)[0];
+        }
 
         //check if content have | (text after | will be content and before will be link).
         const isModifeid = content.match(/\|/g);
@@ -288,9 +296,9 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const image = /!*\[\[.*?\.(png|jpg|gif)\]\]/;
+    const image = /!*\[\[.*?\.(png|jpg|gif).*\]\]/;
     if (image.test(text)) {
-      const imgFileName = text.match(/(?<=\[\[).*?(?=\]\])/)[0];
+      const imgFileName = text.match(/(?<=\[\[).*?(?=\]\]|\||\s)/)[0];
       const imgPath = this.#searchImg(this.#imgPath, imgFileName)
       if(imgPath !== null){
         blockObj[0] = new Block().image;
@@ -302,8 +310,7 @@ module.exports = class MdToNotion{
       }
     }
 
-    //(?!\!*\[\[.*\.\w\w\w\]\])
-    const bulleted_list_item = /^-\s/; //exclud image in list
+    const bulleted_list_item = /^-\s/;
     if (bulleted_list_item.test(text)) {
       blockObj[0] = new Block().bulleted_list_item;
       const content = text.replace(bulleted_list_item, "");
@@ -311,7 +318,7 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const numbered_list_item = /^\d\.\s/; //exclude image in nubered list
+    const numbered_list_item = /^\d\.\s/;
     if (numbered_list_item.test(text)) {
       blockObj[0] = new Block().numbered_list_item;
       const content = text.replace(numbered_list_item, "");
@@ -602,10 +609,13 @@ module.exports = class MdToNotion{
     let listOfString = fs.readFileSync(filePath, {
       encoding: 'utf8',
       flag: 'r'
-    })
-    .toString()
-    //new line, tabel, equation were included
-    .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s/g);
+    }).toString()
+    //exclude html tag and ^reference number
+    listOfString = listOfString.replace(/<!--.*-->|\^[A-Za-z0-9]*?(?=\s|\n)/g,"");
+    //exclude header within --- ---
+    listOfString = listOfString.replace(/---(.|\n)*---/g,"");
+    //spit line with \n \r or latex equation to array
+    listOfString = listOfString.split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s/g);
 
     listOfString = this.#modifiedInlineCodeBlock(listOfString); //set new aligment of inline code block
     listOfString = this.#modifiedInlineImg(listOfString); //set new aligment of inline img
