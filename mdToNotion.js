@@ -288,7 +288,22 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const bulleted_list_item = /^-\s(?!\!*\[\[.*\.\w\w\w\]\])/; //exclud image in list
+    const image = /!*\[\[.*?\.(png|jpg|gif)\]\]/;
+    if (image.test(text)) {
+      const imgFileName = text.match(/(?<=\[\[).*?(?=\]\])/)[0];
+      const imgPath = this.#searchImg(this.#imgPath, imgFileName)
+      if(imgPath !== null){
+        blockObj[0] = new Block().image;
+        const imageUrl = await this.#uploadImg(imgPath);
+        if(imageUrl){
+          blockObj[0].image.external.url = imageUrl;
+          return blockObj;
+        }
+      }
+    }
+
+    //(?!\!*\[\[.*\.\w\w\w\]\])
+    const bulleted_list_item = /^-\s/; //exclud image in list
     if (bulleted_list_item.test(text)) {
       blockObj[0] = new Block().bulleted_list_item;
       const content = text.replace(bulleted_list_item, "");
@@ -296,7 +311,7 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const numbered_list_item = /^\d\.\s(?!\!*\[\[.*\.\w\w\w\]\])/; //exclude image in nubered list
+    const numbered_list_item = /^\d\.\s/; //exclude image in nubered list
     if (numbered_list_item.test(text)) {
       blockObj[0] = new Block().numbered_list_item;
       const content = text.replace(numbered_list_item, "");
@@ -376,20 +391,6 @@ module.exports = class MdToNotion{
       blockObj[0] = new Block().equation;
       blockObj[0].equation.expression = content;
       return blockObj;
-    }
-
-    const image = /\!*\[\[.*?\.png|jpg|gif\]\]/;
-    if (image.test(text)) {
-      const imgFileName = text.match(/(?<=\[\[).*?(?=\]\])/)[0];
-      const imgPath = this.#searchImg(this.#imgPath, imgFileName)
-      if(imgPath !== null){
-        blockObj[0] = new Block().image;
-        const imageUrl = await this.#uploadImg(imgPath);
-        if(imageUrl !== null){
-          blockObj[0].image.external.url = imageUrl;
-          return blockObj;
-        }
-      }
     }
 
     //if doesn't match anything then covert to paragraph block.
@@ -540,7 +541,9 @@ module.exports = class MdToNotion{
       block_id: parentPageId,
       page_size: 50,
     });
-    return getChildlist.results[getChildlist.results.length - 1].id;
+    const lastChildId = getChildlist.results[getChildlist.results.length - 1].id;
+    const lastChildType = getChildlist.results[getChildlist.results.length - 1].type;
+    return {id: lastChildId, type: lastChildType};
   }
 
   //set new aligment of inline code block
@@ -572,12 +575,11 @@ module.exports = class MdToNotion{
   //set new aligment of inline img
   #modifiedInlineImg = (listOfString) =>{
     const regex = {
-      image: /!*(?<!┆!{1})\[\[.*?\.png\]]|gif\]]|jpg\]\](?!┆)/,
+      image: /(?<!┆)\t*-*\s{1}!*\[\[[^┆]*?\.(png|gif|jpg)\]\](?!┆)/,
     }
 
     for(let j = 0; j<listOfString.length;j++){
       for (let i in regex) {
-        console.log("List = " + listOfString[j])
         while (listOfString[j].match(regex[i]) !== null) {
           const index = listOfString[j].match(regex[i]).index
           const lastSlice = index + listOfString[j].match(regex[i])[0].length
@@ -586,10 +588,8 @@ module.exports = class MdToNotion{
           listOfString[j] = newReplce
         }
         if(/┆/.test(listOfString[j])){
-          const seperated = listOfString[j].split(/┆\s|\s┆|┆/);
+          const seperated = listOfString[j].split(/┆/);
           listOfString.splice(j,1)
-          console.log(seperated)
-          console.log(...seperated)
           listOfString.splice(j,0,...seperated);
           j+=seperated.length;
         }
@@ -606,6 +606,7 @@ module.exports = class MdToNotion{
     .toString()
     //new line, tabel, equation were included
     .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s/g);
+
     listOfString = this.#modifiedInlineCodeBlock(listOfString); //set new aligment of inline code block
     listOfString = this.#modifiedInlineImg(listOfString); //set new aligment of inline img
     listOfString = listOfString.filter(e => e !== "" && !/^\n|^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
@@ -618,7 +619,6 @@ module.exports = class MdToNotion{
     if(listOfString.length == 0){
       return console.log("Content is empty")
     }
-    console.log("current file is " + filePath)
     const compressObj = await this.#sameLevelCompress(listOfString);
     const furthestLevel = this.#findFurthestLevle(compressObj);
     let uploadResponse;
@@ -635,14 +635,23 @@ module.exports = class MdToNotion{
           uploadResponse = await this.#notion.blocks.children.append(this.#childObject(pageId, compressObj[i]["notionObj"]));
           arrOfEachLevelId = [pageId];
           previousLevel = 0;
-        }
-        if (Level - previousLevel == 1) {
+        }else if (Level - previousLevel == 1) {
           const lastChildIdToAppend = await this.#findLastChild(arrOfEachLevelId[Level - 1]);
-          uploadResponse = await this.#notion.blocks.children.append(this.#childObject(lastChildIdToAppend, compressObj[i]["notionObj"]));
-          arrOfEachLevelId.push(lastChildIdToAppend);
-          previousLevel = Level;
-        }
-        if (Level - previousLevel < 0) {
+          const lastChildId = lastChildIdToAppend.id;
+
+          //check target block can have child or can not, before append as child
+          const noChild = ["equation", "heading_1", "heading_2",
+          "heading_3", "callout", "quote", "divider", "image", "code"];
+          const isNoChild = noChild.filter(e =>  e == lastChildIdToAppend.type);
+
+          if(isNoChild.length == 0){
+            uploadResponse = await this.#notion.blocks.children.append(this.#childObject(lastChildId, compressObj[i]["notionObj"]));
+            arrOfEachLevelId.push(lastChildId);
+            previousLevel = Level;
+          }else{ //if target block can not have chile, append to previous parent.
+            uploadResponse = await this.#notion.blocks.children.append(this.#childObject(arrOfEachLevelId[previousLevel], compressObj[i]["notionObj"]));
+          }
+        }else if (Level - previousLevel < 0) {
           uploadResponse = await this.#notion.blocks.children.append(this.#childObject(arrOfEachLevelId[Level], compressObj[i]["notionObj"]));
         }
       }
