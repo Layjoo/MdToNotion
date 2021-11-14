@@ -71,7 +71,7 @@ module.exports = class MdToNotion{
   //this make annotaion and mention happend.
   #parserToRichTextObj = async (text) => {
     const regex = {
-      highlight: /(?<!┆)==[^┆\=\s].+?==(?!┆)/,
+      highlight: /(?<!┆)==[^┆\=\s].*?==(?!┆)/,
       bold: /(?<!┆)\*\*[^(┆\*\s)].+?\*\*(?!┆)/,
       code: /(?<!┆)`[^(┆\`\s)].+?`(?!┆)/,
       strikethrough: /(?<!┆)~.[^┆\s]*?~~(?!┆)/,
@@ -79,6 +79,8 @@ module.exports = class MdToNotion{
       backLink: /(?<!┆)\[\[[^(┆\]\])].+?(?<!\.\w\w\w)\]\](?!┆)/, //exclud png jpg and pdf
       equation: /(?<!┆)\$[^(┆\`\s)].+?\$(?!┆)/
     }
+
+    const isNotMention = /\.pdf|\.gif|\.png\.jpg/;
 
     //checking the annotation of content, seperate them with ┆.
     for (let i in regex) {
@@ -138,9 +140,15 @@ module.exports = class MdToNotion{
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
 
-      } else if (regex.backLink.test(listOfText[i])) {
+      } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText)) {
         let content = listOfText[i].replace(/\[\[|\]\]/g, "")
         let link = content;
+
+        //check if mention have block reference or not, if true, mention to page of that block
+        const isBlockReference = /#\^\w*/;
+        if(isBlockReference.test(listOfText[i])){
+          link = content.match(/.*(?=#\^)/)[0];
+        }
 
         //check if content have | (text after | will be content and before will be link).
         const isModifeid = content.match(/\|/g);
@@ -288,7 +296,21 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const bulleted_list_item = /^-\s(?!\!*\[\[.*\.\w\w\w\]\])/; //exclud image in list
+    const image = /!*\[\[.*?\.(png|jpg|gif).*\]\]/;
+    if (image.test(text)) {
+      const imgFileName = text.match(/(?<=\[\[).*?(?=\]\]|\||\s)/)[0];
+      const imgPath = this.#searchImg(this.#imgPath, imgFileName)
+      if(imgPath !== null){
+        blockObj[0] = new Block().image;
+        const imageUrl = await this.#uploadImg(imgPath);
+        if(imageUrl){
+          blockObj[0].image.external.url = imageUrl;
+          return blockObj;
+        }
+      }
+    }
+
+    const bulleted_list_item = /^-\s/;
     if (bulleted_list_item.test(text)) {
       blockObj[0] = new Block().bulleted_list_item;
       const content = text.replace(bulleted_list_item, "");
@@ -296,7 +318,7 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const numbered_list_item = /^\d\.\s(?!\!*\[\[.*\.\w\w\w\]\])/; //exclude image in nubered list
+    const numbered_list_item = /^\d\.\s/;
     if (numbered_list_item.test(text)) {
       blockObj[0] = new Block().numbered_list_item;
       const content = text.replace(numbered_list_item, "");
@@ -378,17 +400,6 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const image = /\!*\[\[.*?\.\w\w\w\]\]/;
-    if (image.test(text)) {
-      const imgFileName = text.match(/(?<=\[\[).*?(?=\]\])/)[0];
-      const imgPath = this.#searchImg(this.#imgPath, imgFileName)
-      if(imgPath !== null){
-        blockObj[0] = new Block().image;
-        blockObj[0].image.external.url = await this.#uploadImg(imgPath);
-        return blockObj;
-      }
-    }
-
     //if doesn't match anything then covert to paragraph block.
     blockObj[0] = new Block().paragraph;
     blockObj[0].paragraph.text = await this.#parserToRichTextObj(text);
@@ -464,7 +475,7 @@ module.exports = class MdToNotion{
 
           //check target block can have child or can not, before append as child
           const noChild = ["equation", "heading_1", "heading_2",
-          "heading_3", "callout", "quote", "divider", "image", "codeBlock"];
+          "heading_3", "callout", "quote", "divider", "image", "code"];
           const isNoChild = noChild.filter(e =>  e == type);
           
           //if previos is the furthest level and it can have child, put it in previous level of it (parent of previous).
@@ -537,11 +548,13 @@ module.exports = class MdToNotion{
       block_id: parentPageId,
       page_size: 50,
     });
-    return getChildlist.results[getChildlist.results.length - 1].id;
+    const lastChildId = getChildlist.results[getChildlist.results.length - 1].id;
+    const lastChildType = getChildlist.results[getChildlist.results.length - 1].type;
+    return {id: lastChildId, type: lastChildType};
   }
 
   //set new aligment of inline code block
-  #modifiedCodeBlock = (listOfString) => {
+  #modifiedInlineCodeBlock = (listOfString) => {
     let indexOfCode = [];
     let i = 0;
     for (i; i < listOfString.length; i++) {
@@ -566,16 +579,46 @@ module.exports = class MdToNotion{
     return listOfString;
   }
 
+  //set new aligment of inline img
+  #modifiedInlineImg = (listOfString) =>{
+    const regex = {
+      image: /(?<!┆)\t*-*\s{1}!*\[\[[^┆]*?\.(png|gif|jpg)\]\](?!┆)/,
+    }
+
+    for(let j = 0; j<listOfString.length;j++){
+      for (let i in regex) {
+        while (listOfString[j].match(regex[i]) !== null) {
+          const index = listOfString[j].match(regex[i]).index
+          const lastSlice = index + listOfString[j].match(regex[i])[0].length
+          const textInside = listOfString[j].slice(index, lastSlice)
+          const newReplce = listOfString[j].replace(regex[i], "┆" + textInside + "┆")
+          listOfString[j] = newReplce
+        }
+        if(/┆/.test(listOfString[j])){
+          const seperated = listOfString[j].split(/┆/);
+          listOfString.splice(j,1)
+          listOfString.splice(j,0,...seperated);
+          j+=seperated.length;
+        }
+      }
+    }
+    return listOfString;
+  }
+
   #getText = (filePath) =>{
     let listOfString = fs.readFileSync(filePath, {
       encoding: 'utf8',
       flag: 'r'
-    })
-    .toString()
-    //new line, tabel, equation, image were included
-    // .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s|(?=\[\[.*?\.\w\w\w\]\])|\!(?=\[\[.*?\.\w\w\w\]\])|(?<=\.\w\w\w\]\])/g);
-    .split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s|(?<!-\s\!{1})(?=\[\[.*?\.\w\w\w\]\])|(?<!-\s)\!(?=\[\[.*?\.\w\w\w\]\])|(?<=\.\w\w\w\]\])/g);
-    listOfString = this.#modifiedCodeBlock(listOfString); //set new aligment of inline code block
+    }).toString()
+    //exclude html tag and ^reference number
+    listOfString = listOfString.replace(/<!--.*-->|\^[A-Za-z0-9]*?(?=\s|\n)/g,"");
+    //exclude header within --- ---
+    listOfString = listOfString.replace(/---(.|\n)*---/g,"");
+    //spit line with \n \r or latex equation to array
+    listOfString = listOfString.split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s/g);
+
+    listOfString = this.#modifiedInlineCodeBlock(listOfString); //set new aligment of inline code block
+    listOfString = this.#modifiedInlineImg(listOfString); //set new aligment of inline img
     listOfString = listOfString.filter(e => e !== "" && !/^\n|^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
     return listOfString;
   }
@@ -586,7 +629,6 @@ module.exports = class MdToNotion{
     if(listOfString.length == 0){
       return console.log("Content is empty")
     }
-    console.log("current file is " + filePath)
     const compressObj = await this.#sameLevelCompress(listOfString);
     const furthestLevel = this.#findFurthestLevle(compressObj);
     let uploadResponse;
@@ -603,14 +645,23 @@ module.exports = class MdToNotion{
           uploadResponse = await this.#notion.blocks.children.append(this.#childObject(pageId, compressObj[i]["notionObj"]));
           arrOfEachLevelId = [pageId];
           previousLevel = 0;
-        }
-        if (Level - previousLevel == 1) {
+        }else if (Level - previousLevel == 1) {
           const lastChildIdToAppend = await this.#findLastChild(arrOfEachLevelId[Level - 1]);
-          uploadResponse = await this.#notion.blocks.children.append(this.#childObject(lastChildIdToAppend, compressObj[i]["notionObj"]));
-          arrOfEachLevelId.push(lastChildIdToAppend);
-          previousLevel = Level;
-        }
-        if (Level - previousLevel < 0) {
+          const lastChildId = lastChildIdToAppend.id;
+
+          //check target block can have child or can not, before append as child
+          const noChild = ["equation", "heading_1", "heading_2",
+          "heading_3", "callout", "quote", "divider", "image", "code"];
+          const isNoChild = noChild.filter(e =>  e == lastChildIdToAppend.type);
+
+          if(isNoChild.length == 0){
+            uploadResponse = await this.#notion.blocks.children.append(this.#childObject(lastChildId, compressObj[i]["notionObj"]));
+            arrOfEachLevelId.push(lastChildId);
+            previousLevel = Level;
+          }else{ //if target block can not have chile, append to previous parent.
+            uploadResponse = await this.#notion.blocks.children.append(this.#childObject(arrOfEachLevelId[previousLevel], compressObj[i]["notionObj"]));
+          }
+        }else if (Level - previousLevel < 0) {
           uploadResponse = await this.#notion.blocks.children.append(this.#childObject(arrOfEachLevelId[Level], compressObj[i]["notionObj"]));
         }
       }
@@ -760,18 +811,36 @@ module.exports = class MdToNotion{
     } else {
       let files = fs.readdirSync(folderPath);
       for (let i in files) {
-        const upload = await this.uploadToDatabase(folderPath + "/" + files[i], this.#databaseId);
+        if (fs.lstatSync(path.resolve(folderPath, files[i])).isFile()){
+          const upload = await this.uploadToDatabase(folderPath + "/" + files[i], this.#databaseId);
+        }
       }
     }
   }
 
   //upload image via imgur api and get url for uploaded image
   #uploadImg = async(filePath) => {
-    if(this.#imgurClientId !== null){
-      imgur.setCredentials(this.#imgurEmail, this.#imgurPassword, this.#imgurClientId);
-    }
-    const uploadImg = await imgur.uploadFile(filePath)
-    return uploadImg.link;
+   const stats =  fs.statSync(filePath);
+   if(stats.size/(1024*1024) < 1){
+     try{
+       if(this.#imgurClientId !== null){
+         imgur.setCredentials(this.#imgurEmail, this.#imgurPassword, this.#imgurClientId);
+       }
+       const uploadImg = await imgur.uploadFile(filePath)
+       return uploadImg.link;
+     }
+     catch(error){
+       if(error.message.match(/(?<=Response\scode\s)\w\w\w/)[0] == "417"){
+         console.log("❗Can not upload large file.")
+       }else if(error.message.match(/(?<=Response\scode\s)\w\w\w/)[0] == "429"){
+         console.log("❗Too many upload image. wait for minute and try again")
+       }
+       return null;
+     }
+   }else{
+     console.log("❗Cannote upload large image");
+     return null;
+   }
   }
 
   #searchImg = (imgFolderPath, imgFileName) => {
