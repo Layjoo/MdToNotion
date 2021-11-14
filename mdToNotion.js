@@ -146,16 +146,18 @@ module.exports = class MdToNotion{
 
         //check if mention have block reference or not, if true, mention to page of that block
         const isBlockReference = /#\^\w*/;
-        if(isBlockReference.test(listOfText[i])){
+        if(isBlockReference.test(content)){
           link = content.match(/.*(?=#\^)/)[0];
         }
-
         //check if content have | (text after | will be content and before will be link).
-        const isModifeid = content.match(/\|/g);
-        if (isModifeid !== null && isModifeid.length == 1) {
+        const isModifeid = /(?<=.)\|(?=.)/
+        if (isModifeid.test(content)) {
           content = content.match(/(?<=\|).*/)[0];
+        }
+        if(isModifeid.test(link)){
           link = link.match(/.*(?=\|)/)[0];
         }
+
         if (this.#databaseId !== null && this.#backlinkType !== null) {
           console.log("Mentioning...")
           //if text match [[]] -> find the page that match with content inside
@@ -298,7 +300,7 @@ module.exports = class MdToNotion{
 
     const image = /!*\[\[.*?\.(png|jpg|gif).*\]\]/;
     if (image.test(text)) {
-      const imgFileName = text.match(/(?<=\[\[).*?(?=\]\]|\||\s)/)[0];
+      const imgFileName = text.match(/!*(?<=\[\[).*?\.(png|jpg|gif)/)[0];
       const imgPath = this.#searchImg(this.#imgPath, imgFileName)
       if(imgPath !== null){
         blockObj[0] = new Block().image;
@@ -326,7 +328,7 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const quote = /^>/;
+    const quote = /^\s*>/;
     if (quote.test(text)) {
       blockObj[0] = new Block().callout;
       const content = text.replace(quote, "");
@@ -579,6 +581,19 @@ module.exports = class MdToNotion{
     return listOfString;
   }
 
+  //this exclude metadata that present in obsidain note
+  #modifiedMetadata = (listOfString) => {
+    if(/^---/.test(listOfString[0])){
+      for(let i = 1; i<listOfString.length; i++){
+        if(/^---/.test(listOfString[i])){
+          listOfString.splice(0,i+1);
+          return listOfString
+        }
+      }
+    }
+    return listOfString;
+  }
+
   //set new aligment of inline img
   #modifiedInlineImg = (listOfString) =>{
     const regex = {
@@ -612,13 +627,12 @@ module.exports = class MdToNotion{
     }).toString()
     //exclude html tag and ^reference number
     listOfString = listOfString.replace(/<!--.*-->|\^[A-Za-z0-9]*?(?=\s|\n)/g,"");
-    //exclude header within --- ---
-    listOfString = listOfString.replace(/---(.|\n)*---/g,"");
     //spit line with \n \r or latex equation to array
     listOfString = listOfString.split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s/g);
 
     listOfString = this.#modifiedInlineCodeBlock(listOfString); //set new aligment of inline code block
     listOfString = this.#modifiedInlineImg(listOfString); //set new aligment of inline img
+    listOfString = this.#modifiedMetadata(listOfString); //excluse metadata
     listOfString = listOfString.filter(e => e !== "" && !/^\n|^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
     return listOfString;
   }
@@ -678,7 +692,8 @@ module.exports = class MdToNotion{
       const pageTitle = path.basename(filePath, path.extname(filePath));
       const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
     }
-    return console.log("Upload page success\n");
+    const fileName = path.basename(filePath, path.extname(filePath))
+    return console.log(`Upload ${fileName} success\n`);
   }
 
   uploadToDatabase = async (filePath) => {
