@@ -24,7 +24,7 @@ module.exports = class MdToNotion{
     this.#imgurEmail = null;
     this.#imgurPassword = null;
     this.#imgurClientId = null;
-    this.#imgPath = ".";
+    this.#imgPath = null;
   }
 
   //findPage indatabase with specific title, return title and id. 
@@ -309,7 +309,7 @@ module.exports = class MdToNotion{
     const image = /!*\[\[.*?\.(png|jpg|gif|jpeg).*\]\]/;
     if (image.test(text)) {
       const imgFileName = text.match(/!*(?<=\[\[).*?\.(png|jpg|gif|jpeg)/)[0];
-      const imgPath = this.#searchImg(this.#imgPath, imgFileName)
+      const imgPath = this.#searchImg(imgFileName)
       if(imgPath !== null){
         blockObj[0] = new Block().image;
         const imageUrl = await this.#uploadImg(imgPath);
@@ -410,7 +410,7 @@ module.exports = class MdToNotion{
       return blockObj;
     }
     
-    const iframe = /<iframe.*<\/iframe>/;
+    const iframe = /<iframe.*?<\/iframe>/;
     if (iframe.test(text)){
       let link;
       const isLink = text.match(/(?<=src=").*(?=">)/);
@@ -663,11 +663,19 @@ module.exports = class MdToNotion{
     listOfString = this.#modifiedInlineCodeBlock(listOfString); //set new aligment of inline code block
     listOfString = this.#modifiedInlineImg(listOfString); //set new aligment of inline img
     listOfString = this.#modifiedMetadata(listOfString); //excluse metadata
-    listOfString = listOfString.filter(e => e !== "" && !/^\n|^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
+    listOfString = listOfString.filter(e => e !== "" && !/^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
     return listOfString;
   }
 
   uploadToPage = async (filePath, pageId) => {
+    //change url to pageId
+    if(/[a-z0-9]{32}/.test(pageId)){
+      pageId = pageId.match(/[a-z0-9]{32}/)[0];
+    }else if(/([a-z0-9]|-)*?/.test(pageId)){
+      pageId = pageId.replace(/-/g,"");
+    }else{
+      console.log("❗ Page URL not match")
+    }
     //get text --> spilt text --> return to array of split string
     const listOfString = this.#getText(filePath)
     if(listOfString.length == 0){
@@ -770,9 +778,14 @@ module.exports = class MdToNotion{
     console.log("🔑 Set type of backing with " + this.#backlinkType)
   }
 
-  dataBaseSetId = (id) => {
-    this.#databaseId = id;
-    console.log(`🔑 Set database id with ${this.#databaseId}`)
+  dataBaseSetId = (url) => {
+    if(/(?<=\/)[a-z0-9]{32}(?=\?)/.test(url)){
+      const id = url.match(/(?<=\/)[a-z0-9]{32}(?=\?)/)[0];
+      this.#databaseId = id;
+      console.log(`🔑 Set database id with ${this.#databaseId}`)
+    }else{
+      console.log("❗ URL not match")
+    }
   }
 
   setImgPath = (imagePath) => {
@@ -848,10 +861,15 @@ module.exports = class MdToNotion{
   }
 
   uploadFolder = async (folderPath) => {
+    if(this.#imgPath == null){
+      this.#imgPath = folderPath;
+      console.log(`🔑 Set image path with ${this.#imgPath}`)
+    }
+
     if (this.#backlinkType == null) {
       fs.readdir(folderPath, (err, files) => {
         files.forEach(file => {
-          if (fs.lstatSync(path.resolve(folderPath, file)).isFile()){
+          if (fs.lstatSync(path.resolve(folderPath, file)).isFile() && (files[i].includes(".txt") || files[i].includes(".md"))){
           this.uploadToDatabase(folderPath + "/" + file, this.#databaseId)
           }
         });
@@ -859,7 +877,7 @@ module.exports = class MdToNotion{
     } else {
       let files = fs.readdirSync(folderPath);
       for (let i in files) {
-        if (fs.lstatSync(path.resolve(folderPath, files[i])).isFile()){
+        if (fs.lstatSync(path.resolve(folderPath, files[i])).isFile() && (files[i].includes(".txt") || files[i].includes(".md"))){
           const upload = await this.uploadToDatabase(folderPath + "/" + files[i], this.#databaseId);
         }
       }
@@ -891,8 +909,11 @@ module.exports = class MdToNotion{
    }
   }
 
-  #searchImg = (imgFolderPath, imgFileName) => {
-    const path = imgFolderPath;
+  #searchImg = (imgFileName) => {
+    if(this.#imgPath == null){
+      return null;
+    }
+    const path = this.#imgPath;
     const myfile = imgFileName
     let imgPath = "";
 
