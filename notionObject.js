@@ -208,6 +208,13 @@ class Block {
     }
   }
 
+  embed = {
+    type: "embed",
+    embed: {
+      url: null
+    }
+  }
+
 
   codeBlock = {
     type: "code",
