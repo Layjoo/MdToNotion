@@ -24,7 +24,7 @@ module.exports = class MdToNotion{
     this.#imgurEmail = null;
     this.#imgurPassword = null;
     this.#imgurClientId = null;
-    this.#imgPath = ".";
+    this.#imgPath = null;
   }
 
   //findPage indatabase with specific title, return title and id. 
@@ -76,11 +76,12 @@ module.exports = class MdToNotion{
       code: /(?<!┆)`[^(┆\`\s)].+?`(?!┆)/,
       strikethrough: /(?<!┆)~.[^┆\s]*?~~(?!┆)/,
       italic: /(?<!┆|\*)\*[^(┆\*\s)].+?\*(?!┆|\*)/,
-      backLink: /(?<!┆)\[\[[^(┆\]\])].+?(?<!\.\w\w\w)\]\](?!┆)/, //exclud png jpg and pdf
-      equation: /(?<!┆)\$[^(┆\`\s)].+?\$(?!┆)/
+      backLink: /(?<!┆)\[\[[^(┆\]\])].+?\]\](?!┆)/,
+      equation: /(?<!┆)\$[^(┆\`\s)].+?\$(?!┆)/,
+      link: /(?<!┆)\[[^(┆\`\s)].*?\]\([^(┆\`\s)].*?\)(?!┆)/
     }
 
-    const isNotMention = /\.pdf|\.gif|\.png\.jpg/;
+    const isNotMention = /\.pdf|\.gif|\.png|\.jpg|\.jpeg|\.bmp|\.svg/;
 
     //checking the annotation of content, seperate them with ┆.
     for (let i in regex) {
@@ -139,8 +140,15 @@ module.exports = class MdToNotion{
         richTextObj.annotations["italic"] = true;
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
-
-      } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText)) {
+      } else if (regex.link.test(listOfText[i])){
+        const content = listOfText[i].match(/(?<=\[).*(?=\])/)[0];
+        const link = listOfText[i].match(/(?<=\]\().*?(?=\))/)[0];
+        const richTextObj = new NotionObject().richTextObj;
+        richTextObj.plain_text = content;
+        richTextObj.text.content = content;
+        richTextObj.text.link = {url: link};
+        modifiedText.push(richTextObj);
+      } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText[i])) {
         let content = listOfText[i].replace(/\[\[|\]\]/g, "")
         let link = content;
 
@@ -298,10 +306,10 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const image = /!*\[\[.*?\.(png|jpg|gif).*\]\]/;
+    const image = /!*\[\[.*?\.(png|jpg|gif|jpeg).*\]\]/;
     if (image.test(text)) {
-      const imgFileName = text.match(/!*(?<=\[\[).*?\.(png|jpg|gif)/)[0];
-      const imgPath = this.#searchImg(this.#imgPath, imgFileName)
+      const imgFileName = text.match(/!*(?<=\[\[).*?\.(png|jpg|gif|jpeg)/)[0];
+      const imgPath = this.#searchImg(imgFileName)
       if(imgPath !== null){
         blockObj[0] = new Block().image;
         const imageUrl = await this.#uploadImg(imgPath);
@@ -401,6 +409,18 @@ module.exports = class MdToNotion{
       blockObj[0].equation.expression = content;
       return blockObj;
     }
+    
+    const iframe = /<iframe.*?<\/iframe>/;
+    if (iframe.test(text)){
+      let link;
+      const isLink = text.match(/(?<=src=").*(?=">)/);
+      if(isLink){
+        link = isLink[0];
+        blockObj[0] = new Block().embed;
+        blockObj[0].embed.url = link;
+        return blockObj;
+      }
+    }
 
     //if doesn't match anything then covert to paragraph block.
     blockObj[0] = new Block().paragraph;
@@ -457,6 +477,8 @@ module.exports = class MdToNotion{
   #nestedChildCompress = (compressObj) => {
     let previous = 0;
     let i = 0;
+    const noChild = ["equation", "heading_1", "heading_2",
+    "heading_3", "callout", "quote", "divider", "image", "code", "embed"];
 
     //if the file have only level 0 then compress them to one object.
     if (compressObj.length == 1) {
@@ -476,8 +498,6 @@ module.exports = class MdToNotion{
           const type = compressObj[i - 2].notionObj[postion]["type"];
 
           //check target block can have child or can not, before append as child
-          const noChild = ["equation", "heading_1", "heading_2",
-          "heading_3", "callout", "quote", "divider", "image", "code"];
           const isNoChild = noChild.filter(e =>  e == type);
           
           //if previos is the furthest level and it can have child, put it in previous level of it (parent of previous).
@@ -492,17 +512,27 @@ module.exports = class MdToNotion{
           i = 0;
           previous = 0;
         } else if (i == compressObj.length - 1) {
-          //if this is the last round, the loop still repeating and break the code,
+          //if this is the last round, the loop still repeat to find last child and break the code,
           //so we need to stop if this is the last round.
           const postion = compressObj[i - 1].notionObj.length - 1;
           const type = compressObj[i - 1].notionObj[postion]["type"];
-          compressObj[i - 1].notionObj[postion][type]["children"] = compressObj[i].notionObj;
-          compressObj.splice(i, 1);
+
+          //check target block can have child or can not, before append as child
+          const isNoChild = noChild.filter(e =>  e == type);
+
+          if(isNoChild.length !==0){
+            compressObj[i - 2].notionObj.push(...compressObj[i - 1].notionObj)
+            compressObj.splice(i - 1, 1);
+          }else{
+            compressObj[i - 1].notionObj[postion][type]["children"] = compressObj[i].notionObj;
+            compressObj.splice(i, 1);
+          }
           let finishedCompress = [];
           for (let y in compressObj) {
             finishedCompress.push(...compressObj[y].notionObj)
           }
           return finishedCompress;
+
         } else {
           previous = compressObj[i].level
           i++;
@@ -633,11 +663,19 @@ module.exports = class MdToNotion{
     listOfString = this.#modifiedInlineCodeBlock(listOfString); //set new aligment of inline code block
     listOfString = this.#modifiedInlineImg(listOfString); //set new aligment of inline img
     listOfString = this.#modifiedMetadata(listOfString); //excluse metadata
-    listOfString = listOfString.filter(e => e !== "" && !/^\n|^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
+    listOfString = listOfString.filter(e => e !== "" && !/^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
     return listOfString;
   }
 
   uploadToPage = async (filePath, pageId) => {
+    //change url to pageId
+    if(/[a-z0-9]{32}/.test(pageId)){
+      pageId = pageId.match(/[a-z0-9]{32}/)[0];
+    }else if(/([a-z0-9]|-)*?/.test(pageId)){
+      pageId = pageId.replace(/-/g,"");
+    }else{
+      console.log("❗ Page URL not match")
+    }
     //get text --> spilt text --> return to array of split string
     const listOfString = this.#getText(filePath)
     if(listOfString.length == 0){
@@ -665,7 +703,7 @@ module.exports = class MdToNotion{
 
           //check target block can have child or can not, before append as child
           const noChild = ["equation", "heading_1", "heading_2",
-          "heading_3", "callout", "quote", "divider", "image", "code"];
+          "heading_3", "callout", "quote", "divider", "image", "code", "embed"];
           const isNoChild = noChild.filter(e =>  e == lastChildIdToAppend.type);
 
           if(isNoChild.length == 0){
@@ -688,6 +726,7 @@ module.exports = class MdToNotion{
     }
     //Checking after upload each file 
     //if there are link to another page in content, then update backlink property for every page that link to this.
+    
     if (this.#backlinkList.length !== 0 && this.#databaseId != null) {
       const pageTitle = path.basename(filePath, path.extname(filePath));
       const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
@@ -739,9 +778,14 @@ module.exports = class MdToNotion{
     console.log("🔑 Set type of backing with " + this.#backlinkType)
   }
 
-  dataBaseSetId = (id) => {
-    this.#databaseId = id;
-    console.log(`🔑 Set database id with ${this.#databaseId}`)
+  dataBaseSetId = (url) => {
+    if(/(?<=\/)[a-z0-9]{32}(?=\?)/.test(url)){
+      const id = url.match(/(?<=\/)[a-z0-9]{32}(?=\?)/)[0];
+      this.#databaseId = id;
+      console.log(`🔑 Set database id with ${this.#databaseId}`)
+    }else{
+      console.log("❗ URL not match")
+    }
   }
 
   setImgPath = (imagePath) => {
@@ -766,6 +810,8 @@ module.exports = class MdToNotion{
     //Variable #backlinkList is assigned from parserToRichText function,
     //if the content have a link to another page then push that link page id to this variable.
 
+    //remove duplicate (recurrent mention in the same page will make backlink duplicate)
+    this.#backlinkList = [...new Set(this.#backlinkList)]
     //Loop througt each linked page id and add the backlink property to them.
     for (let i in this.#backlinkList) {
       //find backlink property in linked page
@@ -815,10 +861,15 @@ module.exports = class MdToNotion{
   }
 
   uploadFolder = async (folderPath) => {
+    if(this.#imgPath == null){
+      this.#imgPath = folderPath;
+      console.log(`🔑 Set image path with ${this.#imgPath}`)
+    }
+
     if (this.#backlinkType == null) {
       fs.readdir(folderPath, (err, files) => {
         files.forEach(file => {
-          if (fs.lstatSync(path.resolve(folderPath, file)).isFile()){
+          if (fs.lstatSync(path.resolve(folderPath, file)).isFile() && (files[i].includes(".txt") || files[i].includes(".md"))){
           this.uploadToDatabase(folderPath + "/" + file, this.#databaseId)
           }
         });
@@ -826,7 +877,7 @@ module.exports = class MdToNotion{
     } else {
       let files = fs.readdirSync(folderPath);
       for (let i in files) {
-        if (fs.lstatSync(path.resolve(folderPath, files[i])).isFile()){
+        if (fs.lstatSync(path.resolve(folderPath, files[i])).isFile() && (files[i].includes(".txt") || files[i].includes(".md"))){
           const upload = await this.uploadToDatabase(folderPath + "/" + files[i], this.#databaseId);
         }
       }
@@ -858,8 +909,11 @@ module.exports = class MdToNotion{
    }
   }
 
-  #searchImg = (imgFolderPath, imgFileName) => {
-    const path = imgFolderPath;
+  #searchImg = (imgFileName) => {
+    if(this.#imgPath == null){
+      return null;
+    }
+    const path = this.#imgPath;
     const myfile = imgFileName
     let imgPath = "";
 

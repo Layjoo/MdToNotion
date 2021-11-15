@@ -1,0 +1,3 @@
+Link: [[Nerve]]
+Schwann cells or neurolemmocytes (named after German physiologist Theodor Schwann) are the principal glia of the peripheral nervous system (PNS). Glial cells function to support neurons and in the PNS, also include satellite cells, olfactory ensheathing cells, enteric glia and glia that reside at sensory nerve endings, such as the Pacinian corpuscle.
+![[Pasted image 20211115171017.png]]
