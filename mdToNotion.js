@@ -77,7 +77,8 @@ module.exports = class MdToNotion{
       strikethrough: /(?<!┆)~.[^┆\s]*?~~(?!┆)/,
       italic: /(?<!┆|\*)\*[^(┆\*\s)].+?\*(?!┆|\*)/,
       backLink: /(?<!┆)\[\[[^(┆\]\])].+?(?<!\.\w\w\w)\]\](?!┆)/, //exclud png jpg and pdf
-      equation: /(?<!┆)\$[^(┆\`\s)].+?\$(?!┆)/
+      equation: /(?<!┆)\$[^(┆\`\s)].+?\$(?!┆)/,
+      link: /(?<!┆)\[[^(┆\`\s)].*?\]\([^(┆\`\s)].*?\)(?!┆)/
     }
 
     const isNotMention = /\.pdf|\.gif|\.png\.jpg/;
@@ -139,8 +140,15 @@ module.exports = class MdToNotion{
         richTextObj.annotations["italic"] = true;
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
-
-      } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText)) {
+      }else if(regex.link.test(listOfText[i])){
+        const content = listOfText[i].match(/(?<=\[).*(?=\])/)[0];
+        const link = listOfText[i].match(/(?<=\]\().*?(?=\))/)[0];
+        const richTextObj = new NotionObject().richTextObj;
+        richTextObj.plain_text = content;
+        richTextObj.text.content = content;
+        richTextObj.text.link = {url: link};
+        modifiedText.push(richTextObj);
+        } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText)) {
         let content = listOfText[i].replace(/\[\[|\]\]/g, "")
         let link = content;
 
@@ -401,6 +409,18 @@ module.exports = class MdToNotion{
       blockObj[0].equation.expression = content;
       return blockObj;
     }
+    
+    const iframe = /<iframe.*<\/iframe>/;
+    if (iframe.test(text)){
+      let link;
+      const isLink = text.match(/(?<=src=").*(?=">)/);
+      if(isLink){
+        link = isLink[0];
+        blockObj[0] = new Block().embed;
+        blockObj[0].embed.url = link;
+        return blockObj;
+      }
+    }
 
     //if doesn't match anything then covert to paragraph block.
     blockObj[0] = new Block().paragraph;
@@ -477,7 +497,7 @@ module.exports = class MdToNotion{
 
           //check target block can have child or can not, before append as child
           const noChild = ["equation", "heading_1", "heading_2",
-          "heading_3", "callout", "quote", "divider", "image", "code"];
+          "heading_3", "callout", "quote", "divider", "image", "code", "embed"];
           const isNoChild = noChild.filter(e =>  e == type);
           
           //if previos is the furthest level and it can have child, put it in previous level of it (parent of previous).
@@ -665,7 +685,7 @@ module.exports = class MdToNotion{
 
           //check target block can have child or can not, before append as child
           const noChild = ["equation", "heading_1", "heading_2",
-          "heading_3", "callout", "quote", "divider", "image", "code"];
+          "heading_3", "callout", "quote", "divider", "image", "code", "embed"];
           const isNoChild = noChild.filter(e =>  e == lastChildIdToAppend.type);
 
           if(isNoChild.length == 0){
