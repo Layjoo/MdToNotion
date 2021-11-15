@@ -76,12 +76,12 @@ module.exports = class MdToNotion{
       code: /(?<!┆)`[^(┆\`\s)].+?`(?!┆)/,
       strikethrough: /(?<!┆)~.[^┆\s]*?~~(?!┆)/,
       italic: /(?<!┆|\*)\*[^(┆\*\s)].+?\*(?!┆|\*)/,
-      backLink: /(?<!┆)\[\[[^(┆\]\])].+?(?<!\.\w\w\w)\]\](?!┆)/, //exclud png jpg and pdf
+      backLink: /(?<!┆)\[\[[^(┆\]\])].+?\]\](?!┆)/,
       equation: /(?<!┆)\$[^(┆\`\s)].+?\$(?!┆)/,
       link: /(?<!┆)\[[^(┆\`\s)].*?\]\([^(┆\`\s)].*?\)(?!┆)/
     }
 
-    const isNotMention = /\.pdf|\.gif|\.png\.jpg/;
+    const isNotMention = /\.pdf|\.gif|\.png|\.jpg|\.jpeg|\.bmp|\.svg/;
 
     //checking the annotation of content, seperate them with ┆.
     for (let i in regex) {
@@ -140,7 +140,7 @@ module.exports = class MdToNotion{
         richTextObj.annotations["italic"] = true;
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
-      }else if(regex.link.test(listOfText[i])){
+      } else if (regex.link.test(listOfText[i])){
         const content = listOfText[i].match(/(?<=\[).*(?=\])/)[0];
         const link = listOfText[i].match(/(?<=\]\().*?(?=\))/)[0];
         const richTextObj = new NotionObject().richTextObj;
@@ -148,7 +148,7 @@ module.exports = class MdToNotion{
         richTextObj.text.content = content;
         richTextObj.text.link = {url: link};
         modifiedText.push(richTextObj);
-        } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText)) {
+      } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText[i])) {
         let content = listOfText[i].replace(/\[\[|\]\]/g, "")
         let link = content;
 
@@ -306,9 +306,9 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const image = /!*\[\[.*?\.(png|jpg|gif).*\]\]/;
+    const image = /!*\[\[.*?\.(png|jpg|gif|jpeg).*\]\]/;
     if (image.test(text)) {
-      const imgFileName = text.match(/!*(?<=\[\[).*?\.(png|jpg|gif)/)[0];
+      const imgFileName = text.match(/!*(?<=\[\[).*?\.(png|jpg|gif|jpeg)/)[0];
       const imgPath = this.#searchImg(this.#imgPath, imgFileName)
       if(imgPath !== null){
         blockObj[0] = new Block().image;
@@ -477,6 +477,8 @@ module.exports = class MdToNotion{
   #nestedChildCompress = (compressObj) => {
     let previous = 0;
     let i = 0;
+    const noChild = ["equation", "heading_1", "heading_2",
+    "heading_3", "callout", "quote", "divider", "image", "code", "embed"];
 
     //if the file have only level 0 then compress them to one object.
     if (compressObj.length == 1) {
@@ -496,8 +498,6 @@ module.exports = class MdToNotion{
           const type = compressObj[i - 2].notionObj[postion]["type"];
 
           //check target block can have child or can not, before append as child
-          const noChild = ["equation", "heading_1", "heading_2",
-          "heading_3", "callout", "quote", "divider", "image", "code", "embed"];
           const isNoChild = noChild.filter(e =>  e == type);
           
           //if previos is the furthest level and it can have child, put it in previous level of it (parent of previous).
@@ -512,17 +512,27 @@ module.exports = class MdToNotion{
           i = 0;
           previous = 0;
         } else if (i == compressObj.length - 1) {
-          //if this is the last round, the loop still repeating and break the code,
+          //if this is the last round, the loop still repeat to find last child and break the code,
           //so we need to stop if this is the last round.
           const postion = compressObj[i - 1].notionObj.length - 1;
           const type = compressObj[i - 1].notionObj[postion]["type"];
-          compressObj[i - 1].notionObj[postion][type]["children"] = compressObj[i].notionObj;
-          compressObj.splice(i, 1);
+
+          //check target block can have child or can not, before append as child
+          const isNoChild = noChild.filter(e =>  e == type);
+
+          if(isNoChild.length !==0){
+            compressObj[i - 2].notionObj.push(...compressObj[i - 1].notionObj)
+            compressObj.splice(i - 1, 1);
+          }else{
+            compressObj[i - 1].notionObj[postion][type]["children"] = compressObj[i].notionObj;
+            compressObj.splice(i, 1);
+          }
           let finishedCompress = [];
           for (let y in compressObj) {
             finishedCompress.push(...compressObj[y].notionObj)
           }
           return finishedCompress;
+
         } else {
           previous = compressObj[i].level
           i++;
@@ -708,6 +718,7 @@ module.exports = class MdToNotion{
     }
     //Checking after upload each file 
     //if there are link to another page in content, then update backlink property for every page that link to this.
+    
     if (this.#backlinkList.length !== 0 && this.#databaseId != null) {
       const pageTitle = path.basename(filePath, path.extname(filePath));
       const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
@@ -786,6 +797,8 @@ module.exports = class MdToNotion{
     //Variable #backlinkList is assigned from parserToRichText function,
     //if the content have a link to another page then push that link page id to this variable.
 
+    //remove duplicate (recurrent mention in the same page will make backlink duplicate)
+    this.#backlinkList = [...new Set(this.#backlinkList)]
     //Loop througt each linked page id and add the backlink property to them.
     for (let i in this.#backlinkList) {
       //find backlink property in linked page
