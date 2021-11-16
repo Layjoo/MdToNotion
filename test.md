@@ -8,6 +8,7 @@
 	- ul level 1
 	- ul level 1
 		- ul level 2
+			- ul level 3
 
 1. ol level 0
 	1. ol level 1
@@ -49,6 +50,14 @@ const text = "this is some code block2."
 
 [This is a link to URL](https://www.netflix.com/browse)
 
+iframe
+
 <iframe src="https://www.youtube.com/embed/NnTvZWp5Q7o"></iframe>
 
-<iframe border=0 frameborder=0 height=250 width=550 src="https://twitframe.com/show?url=https%3A%2F%2Ftwitter.com%2Fjack%2Fstatus%2F20"></iframe>
+<iframe border=0 frameborder=0 height=250 width=550 src="https://twitter.com/Obsidian/status/1404146017809965058?s=20"></iframe>
+
+Link image
+![Imgur](https://papierlos-studieren.net/wp-content/uploads/2020/08/logo-fat-discord.png)
+
+Local image
+[[testImg.png]]

@@ -1,23 +1,14 @@
-require('dotenv').config();
-const MdToNotion = require("./mdToNotion.js")
-const fs = require("fs");
-const imgur = require('imgur')
 const { Client } = require("@notionhq/client");
-const notion = new Client({ auth: process.env.NOTION_KEY});
-const imgureID = process.env.IMGUR_ID;
-const imgurePassword = process.env.IMGUR_PASSWORD;
-const imgureClientID = process.env.IMGUR_CLIENT_ID;
+const MdToNotion = require("./mdToNotion.js")
+const INTEGRATION_TOKEN = "secret_xxxxxxxxxxxxxxxxxxxxxxx"; //change this
+const notion = new Client({ auth: INTEGRATION_TOKEN});
 
 const mdt = new MdToNotion(notion);
-const folderPath = "./Publish note"
-const filePath = "./test.md"
-const imgPath = "./Publish note"
+const folderPath = "./Publish note";
+const imgPath = "./Publish note";
 
-mdt.dataBaseSetId("https://www.notion.so/45ca7bc04ac7458396fc0a36bfcf833e?v=df6542d01c5a4d38bd1774be3c4988d2");
-mdt.pageSetIcon("⚡");
-mdt.setBacklink("mention")
-mdt.setImgPath(imgPath)
-mdt.loginImgur(imgureID, imgurePassword, imgureClientID);
-mdt.uploadToPage(filePath, "https://www.notion.so/test-page-6be6b674036240f684354a4f92c25ca0");
-mdt.uploadFolder(folderPath)
-
+mdt.dataBaseSetId("https://www.notion.so/9720c7ae31fdbcfqbe8ctgwaf061badb4?v=13cfd6a9c15g4cafg2bag5e31e9c2d282"); //change this
+mdt.pageSetIcon("⚡"); //chage icon 💕💞💙💫
+mdt.setBacklink("mention");
+mdt.setImgPath(imgPath); //spicify directory that keep all of your image.
+mdt.uploadFolder(folderPath);
