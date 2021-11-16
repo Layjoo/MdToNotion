@@ -104,7 +104,7 @@ mdt.uploadFolder(folderPath);
 ```
 
 - If you want to keep track your uploaded image, you need to login with your Imgur account and pass your Client imgur id, all files will display on your imgur account.
-- You need to specify directory that contain all of your image, if image directory is not specify, current upload folder path will be used instead.
+- You need to specify directory path that contain all of your image.
 
 ```javascript
 const { Client } = require("@notionhq/client");
