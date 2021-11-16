@@ -2,7 +2,6 @@ const path = require("path")
 const {NotionObject, Block, Property} = require("./notionObject");
 const fs = require("fs");
 const imgur = require("imgur");
-const { makeConsoleLogger } = require("@notionhq/client/build/src/logging");
 
 module.exports = class MdToNotion{
   #notion
@@ -14,6 +13,7 @@ module.exports = class MdToNotion{
   #imgurPassword;
   #imgurClientId;
   #imgPath;
+  #waitUploadImage;
   
   constructor(notionToken) {
     this.#notion = notionToken;
@@ -78,7 +78,7 @@ module.exports = class MdToNotion{
       italic: /(?<!┆|\*)\*[^(┆\*\s)].+?\*(?!┆|\*)/,
       backLink: /(?<!┆)\[\[[^(┆\]\])].+?\]\](?!┆)/,
       equation: /(?<!┆)\$[^(┆\`\s)].+?\$(?!┆)/,
-      link: /(?<!┆)\[[^(┆\`\s)].*?\]\([^(┆\`\s)].*?\)(?!┆)/
+      link: /(?<!┆)\[[^┆].*?\]\([^(┆)].*?\)(?!┆)/
     }
 
     const isNotMention = /\.pdf|\.gif|\.png|\.jpg|\.jpeg|\.bmp|\.svg/;
@@ -140,13 +140,15 @@ module.exports = class MdToNotion{
         richTextObj.annotations["italic"] = true;
         richTextObj.text.content = content;
         modifiedText.push(richTextObj);
-      } else if (regex.link.test(listOfText[i])){
+      } else if (regex.link.test(listOfText[i])) {
         const content = listOfText[i].match(/(?<=\[).*(?=\])/)[0];
         const link = listOfText[i].match(/(?<=\]\().*?(?=\))/)[0];
         const richTextObj = new NotionObject().richTextObj;
         richTextObj.plain_text = content;
         richTextObj.text.content = content;
-        richTextObj.text.link = {url: link};
+        richTextObj.text.link = {
+          url: link
+        };
         modifiedText.push(richTextObj);
       } else if (regex.backLink.test(listOfText[i]) && !isNotMention.test(listOfText[i])) {
         let content = listOfText[i].replace(/\[\[|\]\]/g, "")
@@ -154,7 +156,7 @@ module.exports = class MdToNotion{
 
         //check if mention have block reference or not, if true, mention to page of that block
         const isBlockReference = /#\^\w*/;
-        if(isBlockReference.test(content)){
+        if (isBlockReference.test(content)) {
           link = content.match(/.*(?=#\^)/)[0];
         }
         //check if content have | (text after | will be content and before will be link).
@@ -162,7 +164,7 @@ module.exports = class MdToNotion{
         if (isModifeid.test(content)) {
           content = content.match(/(?<=\|).*/)[0];
         }
-        if(isModifeid.test(link)){
+        if (isModifeid.test(link)) {
           link = link.match(/.*(?=\|)/)[0];
         }
 
@@ -177,7 +179,7 @@ module.exports = class MdToNotion{
               modifiedText.push(mentionObj);
               console.log(`Mention to ${link} complete`)
             } else { //if page not found create new one in current database instead
-              const addNewPage = await this.createPage(link)
+              const addNewPage = await this.#createPage(link)
               const newPageId = addNewPage.response.id;
               mentionObj.mention.page.id = newPageId;
               modifiedText.push(mentionObj);
@@ -194,7 +196,7 @@ module.exports = class MdToNotion{
               this.#backlinkList.push(pageId.id);
               console.log(`Link to ${link} complete`)
             } else { //if page not found create new one in current database instead
-              const addNewPage = await this.createPage(link)
+              const addNewPage = await this.#createPage(link)
               const newPageId = addNewPage.response.id;
               richTextObj.text.link = {
                 url: `/${newPageId.replace(/-/g,"")}`
@@ -306,17 +308,27 @@ module.exports = class MdToNotion{
       return blockObj;
     }
 
-    const image = /!*\[\[.*?\.(png|jpg|gif|jpeg).*\]\]/;
+    const image = /!*\[\[.*?\.(png|jpg|gif|jpeg).*?\]\]/;
     if (image.test(text)) {
       const imgFileName = text.match(/!*(?<=\[\[).*?\.(png|jpg|gif|jpeg)/)[0];
       const imgPath = this.#searchImg(imgFileName)
-      if(imgPath !== null){
+      if (imgPath !== null) {
         blockObj[0] = new Block().image;
         const imageUrl = await this.#uploadImg(imgPath);
-        if(imageUrl){
+        if (imageUrl) {
           blockObj[0].image.external.url = imageUrl;
           return blockObj;
         }
+      }
+    }
+
+    const linkImage = /!*\[[^┆\[\]]*?\]\([^┆\[\]]*?\.(?=png\)|jpg\)|gif\)|jpeg\))/;
+    if(linkImage.test(text)){
+      const imgPath = text.match(/(?<=\]\().*?(?<=png|jpg|gif|jpeg)(?=\))/)
+      if(imgPath !== null) {
+        blockObj[0] = new Block().image;
+        blockObj[0].image.external.url = imgPath[0];
+          return blockObj;
       }
     }
 
@@ -409,12 +421,12 @@ module.exports = class MdToNotion{
       blockObj[0].equation.expression = content;
       return blockObj;
     }
-    
+
     const iframe = /<iframe.*?<\/iframe>/;
-    if (iframe.test(text)){
+    if (iframe.test(text)) {
       let link;
       const isLink = text.match(/(?<=src=").*(?=">)/);
-      if(isLink){
+      if (isLink) {
         link = isLink[0];
         blockObj[0] = new Block().embed;
         blockObj[0].embed.url = link;
@@ -478,7 +490,8 @@ module.exports = class MdToNotion{
     let previous = 0;
     let i = 0;
     const noChild = ["equation", "heading_1", "heading_2",
-    "heading_3", "callout", "quote", "divider", "image", "code", "embed"];
+      "heading_3", "callout", "quote", "divider", "image", "code", "embed"
+    ];
 
     //if the file have only level 0 then compress them to one object.
     if (compressObj.length == 1) {
@@ -498,8 +511,8 @@ module.exports = class MdToNotion{
           const type = compressObj[i - 2].notionObj[postion]["type"];
 
           //check target block can have child or can not, before append as child
-          const isNoChild = noChild.filter(e =>  e == type);
-          
+          const isNoChild = noChild.filter(e => e == type);
+
           //if previos is the furthest level and it can have child, put it in previous level of it (parent of previous).
           if (compressObj[i - 1].level !== compressObj[i - 2].level && isNoChild.length == 0) {
             compressObj[i - 2].notionObj[postion][type]["children"] = compressObj[i - 1].notionObj;
@@ -518,12 +531,12 @@ module.exports = class MdToNotion{
           const type = compressObj[i - 1].notionObj[postion]["type"];
 
           //check target block can have child or can not, before append as child
-          const isNoChild = noChild.filter(e =>  e == type);
+          const isNoChild = noChild.filter(e => e == type);
 
-          if(isNoChild.length !==0){
+          if (isNoChild.length !== 0) {
             compressObj[i - 2].notionObj.push(...compressObj[i - 1].notionObj)
             compressObj.splice(i - 1, 1);
-          }else{
+          } else {
             compressObj[i - 1].notionObj[postion][type]["children"] = compressObj[i].notionObj;
             compressObj.splice(i, 1);
           }
@@ -582,7 +595,10 @@ module.exports = class MdToNotion{
     });
     const lastChildId = getChildlist.results[getChildlist.results.length - 1].id;
     const lastChildType = getChildlist.results[getChildlist.results.length - 1].type;
-    return {id: lastChildId, type: lastChildType};
+    return {
+      id: lastChildId,
+      type: lastChildType
+    };
   }
 
   //set new aligment of inline code block
@@ -613,10 +629,10 @@ module.exports = class MdToNotion{
 
   //this exclude metadata that present in obsidain note
   #modifiedMetadata = (listOfString) => {
-    if(/^---/.test(listOfString[0])){
-      for(let i = 1; i<listOfString.length; i++){
-        if(/^---/.test(listOfString[i])){
-          listOfString.splice(0,i+1);
+    if (/^---/.test(listOfString[0])) {
+      for (let i = 1; i < listOfString.length; i++) {
+        if (/^---/.test(listOfString[i])) {
+          listOfString.splice(0, i + 1);
           return listOfString
         }
       }
@@ -625,12 +641,13 @@ module.exports = class MdToNotion{
   }
 
   //set new aligment of inline img
-  #modifiedInlineImg = (listOfString) =>{
+  #modifiedInlineImg = (listOfString) => {
     const regex = {
-      image: /(?<!┆)\t*-*\s{1}!*\[\[[^┆]*?\.(png|gif|jpg)\]\](?!┆)/,
+      image: /(?<!┆)\t*-*\s{1}!*\[\[[^┆]*?\.(png|gif|jpg|jpeg)\]\](?!┆)/,
+      linkImage: /(?<!┆)!*\[[^┆\[\]]*?\]\([^┆\[\]]*?\.(png|gif|jpg|jpeg)\)(?!┆)/,
     }
 
-    for(let j = 0; j<listOfString.length;j++){
+    for (let j = 0; j < listOfString.length; j++) {
       for (let i in regex) {
         while (listOfString[j].match(regex[i]) !== null) {
           const index = listOfString[j].match(regex[i]).index
@@ -639,46 +656,46 @@ module.exports = class MdToNotion{
           const newReplce = listOfString[j].replace(regex[i], "┆" + textInside + "┆")
           listOfString[j] = newReplce
         }
-        if(/┆/.test(listOfString[j])){
+        if (/┆/.test(listOfString[j])) {
           const seperated = listOfString[j].split(/┆/);
-          listOfString.splice(j,1)
-          listOfString.splice(j,0,...seperated);
-          j+=seperated.length;
+          listOfString.splice(j, 1)
+          listOfString.splice(j, 0, ...seperated);
+          j += seperated.length;
         }
       }
     }
     return listOfString;
   }
 
-  #getText = (filePath) =>{
+  #getText = (filePath) => {
     let listOfString = fs.readFileSync(filePath, {
       encoding: 'utf8',
       flag: 'r'
     }).toString()
     //exclude html tag and ^reference number
-    listOfString = listOfString.replace(/<!--.*-->|\^[A-Za-z0-9]*?(?=\s|\n)/g,"");
+    listOfString = listOfString.replace(/<!--.*-->|\^[A-Za-z0-9]*?(?=\s|\n)/g, "");
     //spit line with \n \r or latex equation to array
     listOfString = listOfString.split(/(?<!\|)\r\n|\n(?!\|)|\s(?=\$\$)|(?<=\$\$)\s/g);
 
     listOfString = this.#modifiedInlineCodeBlock(listOfString); //set new aligment of inline code block
     listOfString = this.#modifiedInlineImg(listOfString); //set new aligment of inline img
-    listOfString = this.#modifiedMetadata(listOfString); //excluse metadata
+    listOfString = this.#modifiedMetadata(listOfString); //exclude metadata
     listOfString = listOfString.filter(e => e !== "" && !/^\s+(?!.[^\s]*)/g.test(e)) //remove blank line
     return listOfString;
   }
 
   uploadToPage = async (filePath, pageId) => {
     //change url to pageId
-    if(/[a-z0-9]{32}/.test(pageId)){
+    if (/[a-z0-9]{32}/.test(pageId)) {
       pageId = pageId.match(/[a-z0-9]{32}/)[0];
-    }else if(/([a-z0-9]|-)*?/.test(pageId)){
-      pageId = pageId.replace(/-/g,"");
-    }else{
-      console.log("❗ Page URL not match")
+    } else if (/([a-z0-9]|-)*?/.test(pageId)) {
+      pageId = pageId.replace(/-/g, "");
+    } else {
+      console.log("❗Page URL not match")
     }
     //get text --> spilt text --> return to array of split string
     const listOfString = this.#getText(filePath)
-    if(listOfString.length == 0){
+    if (listOfString.length == 0) {
       return console.log("Content is empty")
     }
     const compressObj = await this.#sameLevelCompress(listOfString);
@@ -697,23 +714,24 @@ module.exports = class MdToNotion{
           uploadResponse = await this.#notion.blocks.children.append(this.#childObject(pageId, compressObj[i]["notionObj"]));
           arrOfEachLevelId = [pageId];
           previousLevel = 0;
-        }else if (Level - previousLevel == 1) {
+        } else if (Level - previousLevel == 1) {
           const lastChildIdToAppend = await this.#findLastChild(arrOfEachLevelId[Level - 1]);
           const lastChildId = lastChildIdToAppend.id;
 
           //check target block can have child or can not, before append as child
           const noChild = ["equation", "heading_1", "heading_2",
-          "heading_3", "callout", "quote", "divider", "image", "code", "embed"];
-          const isNoChild = noChild.filter(e =>  e == lastChildIdToAppend.type);
+            "heading_3", "callout", "quote", "divider", "image", "code", "embed"
+          ];
+          const isNoChild = noChild.filter(e => e == lastChildIdToAppend.type);
 
-          if(isNoChild.length == 0){
+          if (isNoChild.length == 0) {
             uploadResponse = await this.#notion.blocks.children.append(this.#childObject(lastChildId, compressObj[i]["notionObj"]));
             arrOfEachLevelId.push(lastChildId);
             previousLevel = Level;
-          }else{ //if target block can not have chile, append to previous parent.
+          } else { //if target block can not have chile, append to previous parent.
             uploadResponse = await this.#notion.blocks.children.append(this.#childObject(arrOfEachLevelId[previousLevel], compressObj[i]["notionObj"]));
           }
-        }else if (Level - previousLevel < 0) {
+        } else if (Level - previousLevel < 0) {
           uploadResponse = await this.#notion.blocks.children.append(this.#childObject(arrOfEachLevelId[Level], compressObj[i]["notionObj"]));
         }
       }
@@ -726,13 +744,13 @@ module.exports = class MdToNotion{
     }
     //Checking after upload each file 
     //if there are link to another page in content, then update backlink property for every page that link to this.
-    
+
     if (this.#backlinkList.length !== 0 && this.#databaseId != null) {
       const pageTitle = path.basename(filePath, path.extname(filePath));
       const updateBacklink = await this.#updateBacklink(pageId, pageTitle);
     }
     const fileName = path.basename(filePath, path.extname(filePath))
-    return console.log(`Upload ${fileName} success\n`);
+    return console.log(`------ Upload ${fileName} success\n`);
   }
 
   uploadToDatabase = async (filePath) => {
@@ -745,7 +763,7 @@ module.exports = class MdToNotion{
     pageId = findPageId.id;
     pageTitle = findPageId.title
     if (pageId == null) { //if no page have found, then create new one, and upload the content.
-      const createPageResponse = await this.createPage(fileName);
+      const createPageResponse = await this.#createPage(fileName);
       pageId = createPageResponse.response.id;
       await this.uploadToPage(filePath, pageId);
     } else {
@@ -754,7 +772,7 @@ module.exports = class MdToNotion{
     }
   }
 
-  createPage = async (pageName) => {
+  #createPage = async (pageName) => {
     console.log(`Creating page as ${pageName}`)
     const page = new NotionObject().pageObj;
     page.parent.database_id = this.#databaseId;
@@ -779,12 +797,12 @@ module.exports = class MdToNotion{
   }
 
   dataBaseSetId = (url) => {
-    if(/(?<=\/)[a-z0-9]{32}(?=\?)/.test(url)){
+    if (/(?<=\/)[a-z0-9]{32}(?=\?)/.test(url)) {
       const id = url.match(/(?<=\/)[a-z0-9]{32}(?=\?)/)[0];
       this.#databaseId = id;
       console.log(`🔑 Set database id with ${this.#databaseId}`)
-    }else{
-      console.log("❗ URL not match")
+    } else {
+      console.log("❗URL not match")
     }
   }
 
@@ -861,23 +879,18 @@ module.exports = class MdToNotion{
   }
 
   uploadFolder = async (folderPath) => {
-    if(this.#imgPath == null){
-      this.#imgPath = folderPath;
-      console.log(`🔑 Set image path with ${this.#imgPath}`)
-    }
-
     if (this.#backlinkType == null) {
       fs.readdir(folderPath, (err, files) => {
         files.forEach(file => {
-          if (fs.lstatSync(path.resolve(folderPath, file)).isFile() && (files[i].includes(".txt") || files[i].includes(".md"))){
-          this.uploadToDatabase(folderPath + "/" + file, this.#databaseId)
+          if (fs.lstatSync(path.resolve(folderPath, file)).isFile() && (file.includes(".txt") || file.includes(".md"))) {
+            this.uploadToDatabase(folderPath + "/" + file, this.#databaseId)
           }
         });
       });
     } else {
       let files = fs.readdirSync(folderPath);
       for (let i in files) {
-        if (fs.lstatSync(path.resolve(folderPath, files[i])).isFile() && (files[i].includes(".txt") || files[i].includes(".md"))){
+        if (fs.lstatSync(path.resolve(folderPath, files[i])).isFile() && (files[i].includes(".txt") || files[i].includes(".md"))) {
           const upload = await this.uploadToDatabase(folderPath + "/" + files[i], this.#databaseId);
         }
       }
@@ -885,32 +898,31 @@ module.exports = class MdToNotion{
   }
 
   //upload image via imgur api and get url for uploaded image
-  #uploadImg = async(filePath) => {
-   const stats =  fs.statSync(filePath);
-   if(stats.size/(1024*1024) < 1){
-     try{
-       if(this.#imgurClientId !== null){
-         imgur.setCredentials(this.#imgurEmail, this.#imgurPassword, this.#imgurClientId);
-       }
-       const uploadImg = await imgur.uploadFile(filePath)
-       return uploadImg.link;
-     }
-     catch(error){
-       if(error.message.match(/(?<=Response\scode\s)\w\w\w/)[0] == "417"){
-         console.log("❗Can not upload large file.")
-       }else if(error.message.match(/(?<=Response\scode\s)\w\w\w/)[0] == "429"){
-         console.log("❗Too many upload image. wait for minute and try again")
-       }
-       return null;
-     }
-   }else{
-     console.log("❗Cannote upload large image");
-     return null;
-   }
+  #uploadImg = async (filePath) => {
+    const stats = fs.statSync(filePath);
+    if (stats.size / (1024 * 1024) < 1) {
+      try {
+        if (this.#imgurClientId !== null) {
+          imgur.setCredentials(this.#imgurEmail, this.#imgurPassword, this.#imgurClientId);
+        }
+        const uploadImg = await imgur.uploadFile(filePath)
+        return uploadImg.link;
+      } catch (error) {
+        if (error.message.match(/(?<=Response\scode\s)\w\w\w/)[0] == "417") {
+          console.log("❗Can not upload large file.")
+        } else if (error.message.match(/(?<=Response\scode\s)\w\w\w/)[0] == "429") {
+          console.log("❗Hit Rate limit: Too many upload image.\n")
+        }
+        return null;
+      }
+    } else {
+      console.log("❗Cannote upload large image");
+      return null;
+    }
   }
 
   #searchImg = (imgFileName) => {
-    if(this.#imgPath == null){
+    if (this.#imgPath == null) {
       return null;
     }
     const path = this.#imgPath;
@@ -919,7 +931,7 @@ module.exports = class MdToNotion{
 
     let files = fs.readdirSync(path);
     for (let i in files) {
-      if(files[i] == myfile){
+      if (files[i] == myfile) {
         console.log(`Found image : ${myfile}`);
         imgPath = path + "/" + files[i]
         return imgPath;
@@ -929,7 +941,7 @@ module.exports = class MdToNotion{
     return null;
   }
 
-  loginImgur = (email, password, clientId) =>{
+  loginImgur = (email, password, clientId) => {
     this.#imgurEmail = email;
     this.#imgurPassword = password;
     this.#imgurClientId = clientId
